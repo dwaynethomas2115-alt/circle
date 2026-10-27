@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Circle",
+    "slug": "circle-private",
+    "scheme": "circle",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "app.circle.private" },
+    "android": { "package": "app.circle.private" },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "Circle — Your people. Your place."
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Circle uses your photos only when you choose to share with a Circle.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}
