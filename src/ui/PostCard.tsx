@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Pressable, Image, StyleSheet } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import {
   Heart,
@@ -22,7 +22,8 @@ import {
   CircleAvatar,
 } from "./primitives";
 import { colors as c, font } from "./theme";
-import { VideoView, useVideoPlayer } from "expo-video";
+import { MediaImage, MediaViewer, Video } from "./MediaViewer";
+export { Video } from "./MediaViewer";
 export function timeAgo(date: string) {
   const mins = Math.max(
     1,
@@ -34,18 +35,6 @@ export function timeAgo(date: string) {
       ? `${Math.floor(mins / 60)}h ago`
       : `${Math.floor(mins / 1440)}d ago`;
 }
-export function Video({ uri }: { uri: string }) {
-  const player = useVideoPlayer(uri);
-  return (
-    <VideoView
-      player={player}
-      style={{ width: "100%", height: 340 }}
-      contentFit="contain"
-      nativeControls
-      allowsFullscreen
-    />
-  );
-}
 export function PostCard({
   post,
   detail = false,
@@ -55,6 +44,7 @@ export function PostCard({
 }) {
   const { state, user, actions } = useCircle();
   const router = useRouter();
+  const [viewer, setViewer] = useState(false);
   const [menu, setMenu] = useState(false),
     [notice, setNotice] = useState("");
   const author = state.users.find((u) => u.id === post.authorId);
@@ -149,21 +139,24 @@ export function PostCard({
       )}
       {post.media &&
         (post.mediaType === "video" ? (
-          <Video uri={post.media} />
+          <Video uri={post.media} label={post.content || "Circle video"} />
         ) : (
-          <Pressable onPress={open} accessibilityLabel="View post and comments">
-            <Image
-              source={{ uri: post.media }}
-              accessibilityLabel={post.content}
-              style={{
-                width: "100%",
-                aspectRatio: 1.62,
-                backgroundColor: "#E4EBE1",
-              }}
-              resizeMode="cover"
-            />
-          </Pressable>
+          <MediaImage
+            uri={post.media}
+            label={post.content || "Circle photo"}
+            onPress={() => setViewer(true)}
+          />
         ))}
+      {post.media && (
+        <MediaViewer
+          visible={viewer}
+          onClose={() => setViewer(false)}
+          uri={post.media}
+          type={post.mediaType}
+          caption={post.content}
+          author={author?.name}
+        />
+      )}
       <View
         style={{
           paddingHorizontal: 22,

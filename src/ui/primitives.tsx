@@ -13,15 +13,20 @@ import {
 } from "react-native";
 import { ArrowUpRight, X, type LucideIcon } from "lucide-react-native";
 import { colors as c, font, shadow } from "./theme";
+import { useCircleTheme, themeTint } from "../features/theme-context";
 export function T({
   children,
   style,
   ...props
 }: React.ComponentProps<typeof Text>) {
+  const theme = useCircleTheme();
   return (
     <Text
       {...props}
-      style={[{ fontFamily: font.regular, fontSize: 14, color: c.ink }, style]}
+      style={[
+        { fontFamily: font.regular, fontSize: 14, color: theme.ink },
+        style,
+      ]}
     >
       {children}
     </Text>
@@ -31,7 +36,7 @@ export function IconButton({
   icon: Icon,
   onPress,
   label,
-  color = c.ink,
+  color,
   size = 20,
   style,
 }: {
@@ -42,6 +47,7 @@ export function IconButton({
   size?: number;
   style?: StyleProp<ViewStyle>;
 }) {
+  const theme = useCircleTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -49,12 +55,12 @@ export function IconButton({
       onPress={onPress}
       style={({ pressed }) => [
         s.icon,
-        pressed && { backgroundColor: c.mint },
+        pressed && { backgroundColor: themeTint(theme.accent) },
         pressed && { opacity: 0.6 },
         style,
       ]}
     >
-      <Icon size={size} color={color} strokeWidth={1.7} />
+      <Icon size={size} color={color || theme.ink} strokeWidth={1.7} />
     </Pressable>
   );
 }
@@ -73,6 +79,7 @@ export function Button({
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
+  const theme = useCircleTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -80,18 +87,18 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         s.button,
-        secondary && { backgroundColor: c.mint },
+        { backgroundColor: secondary ? themeTint(theme.accent) : theme.accent },
         pressed && { opacity: 0.88 },
         pressed && { transform: [{ scale: 0.98 }] },
         disabled && { opacity: 0.4 },
         style,
       ]}
     >
-      {Icon && <Icon size={17} color={secondary ? c.teal : "white"} />}
+      {Icon && <Icon size={17} color={secondary ? theme.accent : "white"} />}
       <T
         style={{
           fontFamily: font.bold,
-          color: secondary ? c.teal : "white",
+          color: secondary ? theme.accent : "white",
           fontSize: 13,
         }}
       >
@@ -111,13 +118,14 @@ export function Avatar({
   size?: number;
   border?: boolean;
 }) {
+  const theme = useCircleTheme();
   return (
     <View
       style={{
         width: size,
         height: size,
         borderRadius: size / 2,
-        backgroundColor: "#E8EDE3",
+        backgroundColor: themeTint(theme.accent, 0.12),
         alignItems: "center",
         justifyContent: "center",
         overflow: "hidden",
@@ -136,7 +144,7 @@ export function Avatar({
           style={{
             fontFamily: font.bold,
             fontSize: size * 0.34,
-            color: c.teal,
+            color: theme.accent,
           }}
         >
           {name
@@ -156,12 +164,27 @@ export function Card({
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
-  return <View style={[s.card, style]}>{children}</View>;
+  const theme = useCircleTheme();
+  return (
+    <View
+      style={[
+        s.card,
+        {
+          backgroundColor: theme.surface,
+          borderColor: themeTint(theme.ink, 0.09),
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
 }
 export function Field({
   label,
   ...props
 }: TextInputProps & { label?: string }) {
+  const theme = useCircleTheme();
   return (
     <View style={{ gap: 8, marginBottom: 16 }}>
       {label && <T style={{ fontFamily: font.bold, fontSize: 12 }}>{label}</T>}
@@ -171,6 +194,11 @@ export function Field({
         {...props}
         style={[
           s.field,
+          {
+            backgroundColor: theme.background,
+            borderColor: themeTint(theme.ink, 0.15),
+            color: theme.ink,
+          },
           props.multiline && { minHeight: 110, textAlignVertical: "top" },
           props.style,
         ]}
@@ -187,6 +215,7 @@ export function SectionTitle({
   action?: string;
   onPress?: () => void;
 }) {
+  const theme = useCircleTheme();
   return (
     <View style={s.between}>
       <T style={{ fontFamily: font.heading, fontSize: 17 }}>{title}</T>
@@ -196,10 +225,12 @@ export function SectionTitle({
           onPress={onPress}
           style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
         >
-          <T style={{ color: c.teal, fontSize: 12, fontFamily: font.bold }}>
+          <T
+            style={{ color: theme.accent, fontSize: 12, fontFamily: font.bold }}
+          >
             {action}
           </T>
-          <ArrowUpRight size={13} color={c.teal} />
+          <ArrowUpRight size={13} color={theme.accent} />
         </Pressable>
       )}
     </View>
@@ -237,6 +268,7 @@ export function Empty({
   );
 }
 export function Loading() {
+  const theme = useCircleTheme();
   return (
     <View
       style={{
@@ -247,7 +279,7 @@ export function Loading() {
         gap: 15,
       }}
     >
-      <ActivityIndicator color={c.teal} />
+      <ActivityIndicator color={theme.accent} />
       <T style={{ color: c.muted }}>Finding your people…</T>
     </View>
   );
@@ -259,11 +291,12 @@ export function Banner({
   text: string;
   onDismiss?: () => void;
 }) {
+  const theme = useCircleTheme();
   return (
     <View
       accessibilityRole="alert"
       style={{
-        backgroundColor: c.mint,
+        backgroundColor: themeTint(theme.accent),
         padding: 14,
         borderRadius: 12,
         flexDirection: "row",
@@ -272,7 +305,7 @@ export function Banner({
         marginBottom: 16,
       }}
     >
-      <T style={{ flex: 1, color: c.teal, lineHeight: 20 }}>{text}</T>
+      <T style={{ flex: 1, color: theme.accent, lineHeight: 20 }}>{text}</T>
       {onDismiss && (
         <IconButton icon={X} label="Dismiss message" onPress={onDismiss} />
       )}

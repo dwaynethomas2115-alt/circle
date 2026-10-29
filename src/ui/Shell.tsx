@@ -30,6 +30,14 @@ import {
 import { useCircle } from "../state/CircleProvider";
 import { T, Avatar, IconButton, CircleAvatar } from "./primitives";
 import { colors as c, font } from "./theme";
+import { useCircleFeatures } from "../features/CircleFeaturesProvider";
+import { defaultTheme, validateTheme } from "../features/themes";
+import {
+  CircleThemeProvider,
+  useCircleTheme,
+  themeTint,
+} from "../features/theme-context";
+import { ThemeDecoration } from "../features/ThemeDecoration";
 export const navItems = [
   { label: "Home", path: "/", icon: Home },
   { label: "My Circles", path: "/circles", icon: Compass },
@@ -38,6 +46,7 @@ export const navItems = [
   { label: "My profile", path: "/profile", icon: UserRound },
 ] as const;
 export function Brand({ small = false }: { small?: boolean }) {
+  const theme = useCircleTheme();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
       <View
@@ -46,7 +55,7 @@ export function Brand({ small = false }: { small?: boolean }) {
           height: small ? 29 : 34,
           borderRadius: 20,
           borderWidth: 8,
-          borderColor: c.teal,
+          borderColor: theme.accent,
           transform: [{ rotate: "-22deg" }],
         }}
       >
@@ -71,12 +80,38 @@ export function Brand({ small = false }: { small?: boolean }) {
           letterSpacing: -1.6,
         }}
       >
-        circle<T style={{ color: c.teal, fontSize: 31 }}>.</T>
+        circle<T style={{ color: theme.accent, fontSize: 31 }}>.</T>
       </T>
     </View>
   );
 }
 export function Shell({ children }: { children: React.ReactNode }) {
+  const path = usePathname();
+  const { state, user } = useCircle();
+  const { themes } = useCircleFeatures();
+  const circleId = path.match(/^\/circle\/([^/]+)/)?.[1];
+  const isMember =
+    !!circleId &&
+    state.members.some(
+      (member) => member.circleId === circleId && member.userId === user?.id,
+    );
+  const selectedTheme = circleId && isMember ? themes[circleId] : undefined;
+  const theme = validateTheme(selectedTheme) ? selectedTheme : defaultTheme;
+  return (
+    <CircleThemeProvider theme={theme}>
+      <ThemedShell decorated={isMember}>{children}</ThemedShell>
+    </CircleThemeProvider>
+  );
+}
+function ThemedShell({
+  children,
+  decorated,
+}: {
+  children: React.ReactNode;
+  decorated: boolean;
+}) {
+  const theme = useCircleTheme();
+  const tint = themeTint(theme.accent);
   const path = usePathname(),
     router = useRouter(),
     { width } = useWindowDimensions();
@@ -89,11 +124,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const go = (p: string) => router.push(p as never);
   return (
     <KeyboardAvoidingView
-      style={s.root}
+      style={[s.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {wide && (
-        <View style={s.sidebar}>
+        <View
+          style={[
+            s.sidebar,
+            {
+              backgroundColor: theme.surface,
+              borderColor: themeTint(theme.ink, 0.09),
+            },
+          ]}
+        >
           <Pressable
             accessibilityRole="link"
             onPress={() => go("/")}
@@ -112,19 +155,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   onPress={() => go(p)}
                   style={({ pressed }) => [
                     s.navItem,
-                    active && s.navActive,
+                    active && { backgroundColor: tint },
                     pressed && !active && { backgroundColor: "#F5F7F5" },
                   ]}
                 >
                   <Icon
                     size={20}
-                    color={active ? c.teal : "#86938E"}
+                    color={active ? theme.accent : "#86938E"}
                     strokeWidth={active ? 2 : 1.7}
                   />
                   <T
                     style={{
                       fontFamily: active ? font.bold : font.medium,
-                      color: active ? c.teal : "#71817A",
+                      color: active ? theme.accent : "#71817A",
                       flex: 1,
                       fontSize: 14,
                     }}
@@ -132,10 +175,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
                     {label}
                   </T>
                   {p === "/inbox" && (
-                    <View style={s.count}>
+                    <View
+                      style={[
+                        s.count,
+                        { backgroundColor: themeTint(theme.accent, 0.14) },
+                      ]}
+                    >
                       <T
                         style={{
-                          color: c.teal,
+                          color: theme.accent,
                           fontSize: 10,
                           fontFamily: font.bold,
                         }}
@@ -200,19 +248,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Pressable>
           </View>
           <View style={{ flex: 1 }} />
-          <View style={s.sideNote}>
+          <View style={[s.sideNote, { backgroundColor: tint }]}>
             <View
               style={{
                 width: 31,
                 height: 31,
                 borderRadius: 10,
-                backgroundColor: "#E1EFE6",
+                backgroundColor: themeTint(theme.accent, 0.14),
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 11,
               }}
             >
-              <LockKeyhole size={15} color={c.teal} />
+              <LockKeyhole size={15} color={theme.accent} />
             </View>
             <T style={{ fontFamily: font.bold, fontSize: 12, marginBottom: 6 }}>
               A little closer, together.
@@ -246,7 +294,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
       )}
       <View style={{ flex: 1, minWidth: 0 }}>
         <View
-          style={[s.topbar, !wide && { height: 75, paddingHorizontal: 20 }]}
+          style={[
+            s.topbar,
+            {
+              backgroundColor: theme.surface,
+              borderColor: themeTint(theme.ink, 0.09),
+            },
+            !wide && { height: 75, paddingHorizontal: 20 },
+          ]}
         >
           {wide ? (
             <View>
@@ -268,7 +323,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             }}
           >
             {wide && (
-              <View style={s.search}>
+              <View style={[s.search, { backgroundColor: theme.background }]}>
                 <Search size={16} color="#94A39B" />
                 <TextInput
                   value={search}
@@ -280,7 +335,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                       fontFamily: font.regular,
                       fontSize: 12,
                       flex: 1,
-                      color: c.ink,
+                      color: theme.ink,
                       outlineWidth: 0,
                     } as never
                   }
@@ -290,16 +345,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 />
               </View>
             )}
-            <View style={s.demo}>
+            <View style={[s.demo, { backgroundColor: tint }]}>
               <View
                 style={{
                   width: 5,
                   height: 5,
                   borderRadius: 3,
-                  backgroundColor: c.teal,
+                  backgroundColor: theme.accent,
                 }}
               />
-              <T style={{ fontSize: 9, color: c.teal, fontFamily: font.bold }}>
+              <T
+                style={{
+                  fontSize: 9,
+                  color: theme.accent,
+                  fontFamily: font.bold,
+                }}
+              >
                 {mode === "supabase" ? "CONNECTED" : "LOCAL DEMO"}
               </T>
             </View>
@@ -331,6 +392,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           }}
           style={{ flex: 1 }}
         >
+          {decorated && <ThemeDecoration />}
           <View style={{ width: "100%", maxWidth: 1160, alignSelf: "center" }}>
             <PageMotion path={path}>{children}</PageMotion>
           </View>
@@ -347,6 +409,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <View
             style={[
               s.bottomNav,
+              {
+                backgroundColor: theme.surface,
+                borderColor: themeTint(theme.ink, 0.09),
+              },
               { height: 78 + insets.bottom, paddingBottom: 12 + insets.bottom },
             ]}
           >
@@ -357,14 +423,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 onPress={() => go(p)}
                 style={{ alignItems: "center", gap: 5, flex: 1 }}
               >
-                <View style={p === "/create" ? s.createNav : undefined}>
+                <View
+                  style={
+                    p === "/create"
+                      ? [s.createNav, { backgroundColor: theme.accent }]
+                      : undefined
+                  }
+                >
                   <Icon
                     size={22}
                     color={
                       p === "/create"
                         ? "white"
                         : path === p
-                          ? c.teal
+                          ? theme.accent
                           : "#8A9890"
                     }
                   />
@@ -373,7 +445,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                   <T
                     style={{
                       fontSize: 9,
-                      color: path === p ? c.teal : "#8A9890",
+                      color: path === p ? theme.accent : "#8A9890",
                       fontFamily: font.medium,
                     }}
                   >

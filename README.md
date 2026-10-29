@@ -41,17 +41,28 @@ Offline mode skips Expo's online dependency-version lookup; it does not disable 
 - In-app notifications and read controls for invitations, requests, approvals, posts, reactions, and comment/reply activity. Push delivery and direct messages are outside this MVP.
 - Loading, empty, error, unauthorized, and removed-content states; bundled typography and imagery.
 
-The default appearance is light. Dark mode, push notifications, events, polls, albums, subscriptions, direct messaging, and child accounts have not been built.
+Circle now also includes:
+
+- **Better media:** full-size photo viewing, portrait/landscape proportions, loading/retry states, high-quality JPEG processing up to 2560px without upscaling, and short-video playback controls. Photos are re-encoded to remove source EXIF/GPS; videos remain limited to 60 seconds/50 MB.
+- **Catch up:** private counts of posts, messages, comments and polls since your last reviewed visit; upcoming events; and a playable montage of shared photos, videos, and text. This montage is an in-app slideshow; it does not export a newly rendered video file.
+- **Calendar:** a month view, member-created events with local time entry, and going/maybe/not-going RSVPs.
+- **Polls:** 2–6 options, one changeable vote per person, actual result counts, optional expiry, and author/manager close/delete controls.
+- **Circle themes:** subtle palettes and sparse motifs across the Circle shell, feed, chat, and feature tabs. Presets include pink/unicorn-inspired magic, Vegas emerald and champagne, garden, coastal, and minimal. Owner/admin settings preview and apply themes; Home retains Circle’s base style. Demo prompts select clearly labeled local presets. Real AI generates a validated palette/motif specification after server configuration.
+- **Circle room:** drop-in group voice/video on the web using LiveKit. Microphone and camera start off; local demo offers only a self-preview, with no remote users or simulated presence. Real calls require configured Supabase, LiveKit, and reliable removal delivery. Native currently opens the same Circle in a configured browser app; native in-app WebRTC calling has not been implemented.
+
+The default appearance is light. Dark mode, push notifications, albums, subscriptions, direct messaging, and child accounts remain outside this version.
 
 ## Connect Supabase
 
 Follow [the backend setup and security guide](supabase/README.md), including the account-deletion Edge Function deployment.
 
-1. Create a fresh Supabase project and apply `supabase/migrations/202610270001_circle.sql` using the SQL editor or Supabase CLI.
+1. For a fresh Supabase project, apply `supabase/migrations/202610270001_circle.sql` and then `supabase/migrations/202610290001_circle_features.sql`. For an existing Circle project, apply only the pending feature migration. `supabase db push` on a linked project tracks pending migrations.
 2. Copy `.env.example` to `.env` and set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` to the public project URL/key. **Never put a service-role key in the app.** Both values must be configured; restart Expo after changing them.
 3. Configure email confirmation and redirect URLs in Supabase Auth. Deploy the `delete-account` Edge Function described in the backend guide.
 4. In this cloud environment, add the exact project hostname (`<project-ref>.supabase.co`) to environment Internet access if required. Public configuration variables are build-time Expo settings; they are not secret credentials.
 5. Sign up two real adult test users and complete the hosted two-user checks in the backend guide. Remote mode starts empty and never copies demo identities/content into Supabase.
+
+Polls/calendar/catch-up and preset themes need only the new migration. For real AI themes, deploy `generate-circle-theme` and set its server-side OpenAI key following [feature setup](supabase/FEATURES.md). For live rooms, follow [LiveKit setup](supabase/ROOMS.md), including signed provider webhooks, durable membership-removal retries, and the fail-closed enablement switch. These services may incur provider charges. Only an explicit theme description is sent to the AI provider, never private posts, media, or chat.
 
 When configured, the provider switches to Supabase; all app operations use real Auth, PostgreSQL RLS, private Storage, and Realtime. Backend/schema failures appear as errors and clear cached private feed/chat data. There is no silent fallback to demo data.
 
@@ -67,6 +78,7 @@ src/state/demo.tsx         Serialized local persistence and demo actions
 src/state/remote.tsx       Auth-aware Supabase adapter and cache invalidation
 src/lib/backend.ts         Auth/database/storage operations
 src/lib/supabase.ts        Public-key client, session persistence/lifecycle
+src/features/             Polls, calendar, recaps, themes, providers and live rooms
 supabase/migrations/       PostgreSQL schema, indexes, RLS, secure RPCs, notifications
 supabase/functions/         Server-only account-deletion cleanup
 supabase/tests/            Actual migration/RLS tests in embedded PostgreSQL
@@ -93,8 +105,8 @@ Install Chromium for Playwright once with `npx playwright install chromium`, or 
 CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e
 ```
 
-Playwright starts/reuses the web development server on port 8081. Tests use fresh browser storage. They exercise publishing/reactions/replies and reload persistence, Circle creation/chat/join requests, profile editing/logout/adult signup, and phone navigation. Unit tests check local membership/role boundaries and persistence. Privacy tests apply the exact migration in PGlite with non-superuser auth roles and minimal Supabase auth/storage stubs.
+Playwright starts/reuses the web development server on port 8081. Tests use fresh browser storage. They exercise publishing/reactions/replies and reload persistence, Circle creation/chat/join requests, profile editing/logout/adult signup, phone navigation, full-size portrait photos, real short-video playback/length validation, polls, event RSVPs, scoped themes, and catch-up montage/read markers. Unit tests check local membership/role boundaries and persistence. Privacy tests apply the exact migration in PGlite with non-superuser auth roles and minimal Supabase auth/storage stubs.
 
-**Validation limits:** embedded SQL tests verify database policies, not the hosted Auth/Storage/WebSocket services. A real configured Supabase project and two devices/sessions are still needed to verify email delivery, actual uploads/downloads, Realtime, removal during an active connection, and deployed account deletion. Web, iOS, and Android bundles were exported in this cloud machine; iOS/Android installation and device behavior require their respective device/simulator toolchains.
+**Validation limits:** embedded SQL tests verify database policies, not the hosted Auth/Storage/WebSocket services. A real configured Supabase project and two devices/sessions are still needed to verify email delivery, actual uploads/downloads, Realtime, removal during an active connection, and deployed account deletion. Real AI calls and LiveKit participant delivery/removal have not been tested with hosted credentials. Calls are disabled until server revocation delivery is explicitly configured; provider outages still create an asynchronous removal window. Web, iOS, and Android bundles were exported in this cloud machine; iOS/Android installation and device behavior require their respective device/simulator toolchains.
 
 Web exports contain a `noindex` robots directive. Configure your web host to serve `dist/index.html` for unknown app routes (SPA fallback), use HTTPS, and add an `X-Robots-Tag: noindex, nofollow` response header for defense in depth. No Supabase service-role secrets belong in a web build.

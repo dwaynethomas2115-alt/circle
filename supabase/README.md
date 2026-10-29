@@ -41,3 +41,7 @@ node supabase/tests/account-deletion.mjs
 The test harness supplies minimal `auth.users`, `auth.uid()`, `storage.objects`, `storage.buckets`, and a Realtime publication. This validates SQL and RLS semantics; it does **not** validate hosted Auth delivery, actual object signing/downloading, mobile uploads, or WebSocket event delivery. Run the two-account hosted checks above before production use. There are no claimed hosted integration passes without configured credentials.
 
 The Edge handler tests execute the actual Deno handler code under Node with mocked upstream HTTP to verify caller authentication, caller-only media deletion, cleanup ordering, and failures. Node 22.13+ is required for its built-in TypeScript stripping; Node 24 is used in this environment. These tests do not contact a hosted project.
+
+## Community features and live rooms
+
+Apply the additive feature migration after the base migration. See [polls, events, catch-up, and AI themes](FEATURES.md) and [LiveKit room setup](ROOMS.md) for server configuration, deployment order, authorization boundaries, and hosted verification requirements. Preset themes and database features work without an AI or calling provider. Real AI themes and live rooms require the documented server-only provider credentials.

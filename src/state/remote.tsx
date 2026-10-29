@@ -367,21 +367,29 @@ export function useRemoteCircle(): CircleContextValue {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "circle_members" },
-        () => {
-          // Membership events may indicate revocation; remove all cached private data first.
-          setState((previous) => ({
-            ...previous,
-            circles: previous.circles.filter((c) => c.discoverable),
-            posts: [],
-            comments: [],
-            messages: [],
-            members: [],
-            reports: [],
-            notifications: [],
-            requests: previous.requests.filter(
-              (r) => r.userId === previous.currentUserId,
-            ),
-          }));
+        (event) => {
+          // Inserts and role changes do not revoke this caller. Clearing every
+          // membership on those events would tear down an active group room.
+          // A DELETE can revoke access, so clear before the authoritative reload.
+          const oldUser = (event.old as { user_id?: string }).user_id;
+          if (
+            event.eventType === "DELETE" &&
+            (!oldUser || oldUser === userId.current)
+          ) {
+            setState((previous) => ({
+              ...previous,
+              circles: previous.circles.filter((c) => c.discoverable),
+              posts: [],
+              comments: [],
+              messages: [],
+              members: [],
+              reports: [],
+              notifications: [],
+              requests: previous.requests.filter(
+                (r) => r.userId === previous.currentUserId,
+              ),
+            }));
+          }
           void refresh();
         },
       )

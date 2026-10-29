@@ -26,6 +26,7 @@ import {
   LogOut,
   KeyRound,
   Flag,
+  Video,
 } from "lucide-react-native";
 import { useCircle } from "../../src/state/CircleProvider";
 import { visibleMessages } from "../../src/state/model";
@@ -43,16 +44,66 @@ import {
 import { PostCard } from "../../src/ui/PostCard";
 import { colors as c, font } from "../../src/ui/theme";
 import type { Result } from "../../src/types";
-type Tab = "Feed" | "Chat" | "Members" | "About" | "Settings" | "Reports";
+import { PollsPanel } from "../../src/features/PollsPanel";
+import { CalendarPanel } from "../../src/features/CalendarPanel";
+import { CatchUpPanel } from "../../src/features/CatchUpPanel";
+import { ThemeEditor } from "../../src/features/ThemeEditor";
+import { CircleRoom } from "../../src/features/room/CircleRoom";
+import { useCircleTheme, themeTint } from "../../src/features/theme-context";
+type Tab =
+  | "Feed"
+  | "Catch up"
+  | "Chat"
+  | "Calendar"
+  | "Polls"
+  | "Room"
+  | "Members"
+  | "About"
+  | "Settings"
+  | "Reports";
+const routeTabs: Record<string, Tab> = {
+  feed: "Feed",
+  chat: "Chat",
+  "catch-up": "Catch up",
+  catchup: "Catch up",
+  calendar: "Calendar",
+  polls: "Polls",
+  room: "Room",
+  members: "Members",
+  about: "About",
+  settings: "Settings",
+  reports: "Reports",
+};
 // A new route scope gets fresh drafts, invitations, and async callbacks immediately.
 export default function CircleDetailRoute() {
-  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
-  return <CircleDetail key={`${id}:${tab || ""}`} id={id} initialTab={tab} />;
+  const { id, tab, room } = useLocalSearchParams<{
+    id: string;
+    tab?: string;
+    room?: string;
+  }>();
+  const requestedTab = room === "1" ? "room" : tab;
+  return (
+    <CircleDetail
+      key={`${id}:${requestedTab || ""}`}
+      id={id}
+      initialTab={requestedTab}
+    />
+  );
 }
 function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const { state, user, feed, actions } = useCircle();
+  const theme = useCircleTheme();
+  const palette = {
+    ...c,
+    teal: theme.accent,
+    ink: theme.ink,
+    white: theme.surface,
+    mint: themeTint(theme.accent, 0.08),
+  };
   const { width } = useWindowDimensions();
-  const [tab, setTab] = useState<Tab>(initialTab === "chat" ? "Chat" : "Feed");
+  const [tab, setTab] = useState<Tab>(
+    routeTabs[initialTab?.toLowerCase() || ""] || "Feed",
+  );
   const [notice, setNotice] = useState("");
   const [message, setMessage] = useState("");
   const [invite, setInvite] = useState("");
@@ -187,7 +238,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           label="Back to Circles"
           onPress={() => router.push("/circles")}
         />
-        <T style={{ color: c.muted, fontSize: 11, letterSpacing: 0.7 }}>
+        <T style={{ color: palette.muted, fontSize: 11, letterSpacing: 0.7 }}>
           YOUR CIRCLES / {circle.category.toUpperCase()}
         </T>
       </View>
@@ -254,17 +305,23 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
               >
                 <T
-                  style={{ color: c.teal, fontFamily: font.bold, fontSize: 11 }}
+                  style={{
+                    color: palette.teal,
+                    fontFamily: font.bold,
+                    fontSize: 11,
+                  }}
                 >
                   {circle.category}
                 </T>
                 <T style={{ color: "#CCD5CE" }}>·</T>
-                <Lock size={11} color={c.muted} />
-                <T style={{ color: c.muted, fontSize: 11 }}>Private Circle</T>
+                <Lock size={11} color={palette.muted} />
+                <T style={{ color: palette.muted, fontSize: 11 }}>
+                  Private Circle
+                </T>
                 {membership && (
                   <>
                     <T style={{ color: "#CCD5CE" }}>·</T>
-                    <T style={{ color: c.muted, fontSize: 11 }}>
+                    <T style={{ color: palette.muted, fontSize: 11 }}>
                       {members.length}{" "}
                       {members.length === 1 ? "member" : "members"}
                     </T>
@@ -273,14 +330,37 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               </View>
             </View>
             {membership ? (
-              <Button
-                icon={Plus}
-                onPress={() =>
-                  router.push({ pathname: "/create", params: { circleId: id } })
-                }
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  maxWidth: "100%",
+                }}
               >
-                Share a moment
-              </Button>
+                <Button
+                  secondary
+                  icon={MessageCircle}
+                  onPress={() => setTab("Chat")}
+                >
+                  Group chat
+                </Button>
+                <Button secondary icon={Video} onPress={() => setTab("Room")}>
+                  Join room
+                </Button>
+                <Button
+                  icon={Plus}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/create",
+                      params: { circleId: id },
+                    })
+                  }
+                >
+                  Share a moment
+                </Button>
+              </View>
             ) : (
               <Button
                 icon={ownRequest ? Check : UserPlus}
@@ -297,7 +377,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               </Button>
             )}
           </View>
-          <T style={{ color: c.muted, lineHeight: 22, maxWidth: 650 }}>
+          <T style={{ color: palette.muted, lineHeight: 22, maxWidth: 650 }}>
             {circle.description}
           </T>
         </View>
@@ -305,13 +385,17 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ borderTopWidth: 1, borderColor: c.line }}
+            style={{ borderTopWidth: 1, borderColor: palette.line }}
             contentContainerStyle={{ paddingHorizontal: width < 650 ? 8 : 20 }}
           >
             {(
               [
                 "Feed",
+                "Catch up",
                 "Chat",
+                "Calendar",
+                "Polls",
+                "Room",
                 "Members",
                 "About",
                 ...(isModerator ? ["Reports"] : []),
@@ -328,7 +412,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   paddingHorizontal: width < 650 ? 12 : 20,
                   paddingVertical: 17,
                   borderBottomWidth: 2,
-                  borderColor: tab === label ? c.teal : "transparent",
+                  borderColor: tab === label ? palette.teal : "transparent",
                 }}
               >
                 <View
@@ -337,21 +421,24 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   {label === "Chat" ? (
                     <MessageCircle
                       size={15}
-                      color={tab === label ? c.teal : c.muted}
+                      color={tab === label ? palette.teal : palette.muted}
                     />
                   ) : label === "Members" ? (
-                    <Users size={15} color={tab === label ? c.teal : c.muted} />
+                    <Users
+                      size={15}
+                      color={tab === label ? palette.teal : palette.muted}
+                    />
                   ) : label === "Settings" ? (
                     <Settings
                       size={15}
-                      color={tab === label ? c.teal : c.muted}
+                      color={tab === label ? palette.teal : palette.muted}
                     />
                   ) : null}
                   <T
                     style={{
                       fontSize: 12,
                       fontFamily: font.bold,
-                      color: tab === label ? c.teal : c.muted,
+                      color: tab === label ? palette.teal : palette.muted,
                     }}
                   >
                     {label}
@@ -376,7 +463,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           }}
         >
           <View style={{ flexDirection: "row", gap: 9, alignItems: "center" }}>
-            <KeyRound size={18} color={c.teal} />
+            <KeyRound size={18} color={palette.teal} />
             <T style={{ fontFamily: font.bold }}>A seat in your Circle</T>
           </View>
           <T
@@ -385,12 +472,12 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               fontSize: 23,
               fontFamily: font.heading,
               letterSpacing: 2,
-              color: c.teal,
+              color: palette.teal,
             }}
           >
             {invite}
           </T>
-          <T style={{ color: c.muted, fontSize: 12 }}>
+          <T style={{ color: palette.muted, fontSize: 12 }}>
             Share this invitation privately. It expires in 7 days and can be
             used once.
           </T>
@@ -406,12 +493,24 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           }
         >
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
-            <Lock size={14} color={c.teal} />
-            <T style={{ color: c.teal, fontSize: 12 }}>Private by design</T>
+            <Lock size={14} color={palette.teal} />
+            <T style={{ color: palette.teal, fontSize: 12 }}>
+              Private by design
+            </T>
           </View>
         </Empty>
       ) : (
         <>
+          {tab === "Catch up" && <CatchUpPanel circleId={id} />}
+          {tab === "Calendar" && <CalendarPanel circleId={id} />}
+          {tab === "Polls" && <PollsPanel circleId={id} />}
+          {tab === "Room" && (
+            <CircleRoom
+              circleId={id}
+              circleName={circle.name}
+              onClose={() => setTab("Feed")}
+            />
+          )}
           {tab === "Feed" && (
             <View
               style={{
@@ -431,7 +530,9 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 <T style={{ fontFamily: font.heading, fontSize: 17 }}>
                   Life in your Circle
                 </T>
-                <T style={{ fontSize: 11, color: c.muted }}>Latest moments</T>
+                <T style={{ fontSize: 11, color: palette.muted }}>
+                  Latest moments
+                </T>
               </View>
               {posts.map((post) => (
                 <PostCard key={post.id} post={post} />
@@ -462,7 +563,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 style={{
                   padding: 23,
                   borderBottomWidth: 1,
-                  borderColor: c.line,
+                  borderColor: palette.line,
                   flexDirection: "row",
                   gap: 12,
                   alignItems: "center",
@@ -473,19 +574,20 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                     height: 40,
                     width: 40,
                     borderRadius: 14,
-                    backgroundColor: c.mint,
+                    backgroundColor: palette.mint,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
                 >
-                  <MessageCircle size={21} color={c.teal} />
+                  <MessageCircle size={21} color={palette.teal} />
                 </View>
                 <View style={{ gap: 4 }}>
                   <T style={{ fontFamily: font.heading, fontSize: 17 }}>
-                    The conversation
+                    Full-Circle group chat
                   </T>
-                  <T style={{ fontSize: 11, color: c.muted }}>
-                    A little closer, one message at a time.
+                  <T style={{ fontSize: 11, color: palette.muted }}>
+                    All {members.length} approved members share this
+                    conversation.
                   </T>
                 </View>
               </View>
@@ -502,8 +604,8 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               >
                 {!messages.length && (
                   <View style={{ padding: 40, gap: 12, alignItems: "center" }}>
-                    <MessageCircle color={c.muted} size={32} />
-                    <T style={{ color: c.muted, textAlign: "center" }}>
+                    <MessageCircle color={palette.muted} size={32} />
+                    <T style={{ color: palette.muted, textAlign: "center" }}>
                       Say the first hello.
                     </T>
                   </View>
@@ -539,7 +641,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                             style={{
                               fontSize: 10,
                               fontFamily: font.bold,
-                              color: c.muted,
+                              color: palette.muted,
                             }}
                           >
                             {author?.name || "Circle member"}
@@ -551,12 +653,12 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                             borderRadius: 15,
                             borderBottomRightRadius: own ? 4 : 15,
                             borderBottomLeftRadius: own ? 15 : 4,
-                            backgroundColor: own ? c.teal : "#F0F4EF",
+                            backgroundColor: own ? palette.teal : "#F0F4EF",
                           }}
                         >
                           <T
                             style={{
-                              color: own ? "white" : c.ink,
+                              color: own ? "white" : palette.ink,
                               lineHeight: 21,
                             }}
                           >
@@ -570,7 +672,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                             alignItems: "center",
                           }}
                         >
-                          <T style={{ fontSize: 9, color: c.muted }}>
+                          <T style={{ fontSize: 9, color: palette.muted }}>
                             {new Date(msg.createdAt).toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -587,7 +689,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                                 )
                               }
                             >
-                              <Trash2 size={11} color={c.muted} />
+                              <Trash2 size={11} color={palette.muted} />
                             </Pressable>
                           )}
                           {!own && (
@@ -605,7 +707,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                                 )
                               }
                             >
-                              <Flag size={11} color={c.muted} />
+                              <Flag size={11} color={palette.muted} />
                             </Pressable>
                           )}
                         </View>
@@ -619,7 +721,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   margin: 18,
                   borderRadius: 14,
                   borderWidth: 1,
-                  borderColor: c.line,
+                  borderColor: palette.line,
                   backgroundColor: "#FAFCFA",
                   padding: 10,
                   paddingLeft: 15,
@@ -640,7 +742,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                     flex: 1,
                     fontFamily: font.regular,
                     fontSize: 13,
-                    color: c.ink,
+                    color: palette.ink,
                     paddingVertical: 8,
                   }}
                 />
@@ -659,7 +761,13 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               {isManager && pending.length > 0 && (
                 <Card style={{ padding: 24, gap: 16 }}>
                   <SectionTitle title="A few new faces" />
-                  <T style={{ color: c.muted, fontSize: 12, marginTop: -15 }}>
+                  <T
+                    style={{
+                      color: palette.muted,
+                      fontSize: 12,
+                      marginTop: -15,
+                    }}
+                  >
                     Review the people who would like to join your Circle.
                   </T>
                   {pending.map((request) => {
@@ -684,7 +792,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                           <T style={{ fontFamily: font.bold }}>
                             {person?.name || "New member"}
                           </T>
-                          <T style={{ color: c.muted, fontSize: 11 }}>
+                          <T style={{ color: palette.muted, fontSize: 11 }}>
                             @{person?.username || "member"} · Requested to join
                           </T>
                         </View>
@@ -737,7 +845,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                         alignItems: "center",
                         gap: 12,
                         borderBottomWidth: 1,
-                        borderColor: c.line,
+                        borderColor: palette.line,
                         paddingBottom: 17,
                         flexWrap: "wrap",
                       }}
@@ -752,7 +860,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                           {person?.name || "Circle member"}
                           {member.userId === user?.id ? " (you)" : ""}
                         </T>
-                        <T style={{ fontSize: 11, color: c.muted }}>
+                        <T style={{ fontSize: 11, color: palette.muted }}>
                           @{person?.username || "member"}
                         </T>
                       </View>
@@ -762,19 +870,22 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                           alignItems: "center",
                           gap: 5,
                           backgroundColor:
-                            member.role === "owner" ? c.mint : "#F4F5F2",
+                            member.role === "owner" ? palette.mint : "#F4F5F2",
                           borderRadius: 15,
                           paddingVertical: 6,
                           paddingHorizontal: 11,
                         }}
                       >
                         {member.role !== "member" && (
-                          <Shield size={11} color={c.teal} />
+                          <Shield size={11} color={palette.teal} />
                         )}
                         <T
                           style={{
                             fontSize: 10,
-                            color: member.role === "owner" ? c.teal : c.muted,
+                            color:
+                              member.role === "owner"
+                                ? palette.teal
+                                : palette.muted,
                             textTransform: "capitalize",
                           }}
                         >
@@ -829,7 +940,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                           <IconButton
                             icon={X}
                             label={`Remove ${person?.name || "member"}`}
-                            color={c.red}
+                            color={palette.red}
                             onPress={() =>
                               handle(
                                 actions.removeMember(id, member.userId),
@@ -857,7 +968,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                             <T
                               style={{
                                 fontSize: 12,
-                                color: c.muted,
+                                color: palette.muted,
                                 lineHeight: 20,
                               }}
                             >
@@ -909,29 +1020,35 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 <T style={{ fontFamily: font.heading, fontSize: 22 }}>
                   A space for us.
                 </T>
-                <T style={{ color: c.muted, lineHeight: 25 }}>
+                <T style={{ color: palette.muted, lineHeight: 25 }}>
                   {circle.description ||
                     "The little moments are better together. This is your shared space to connect, catch up, and feel a little closer."}
                 </T>
               </View>
               <View style={s.aboutRow}>
-                <Users color={c.teal} size={19} />
+                <Users color={palette.teal} size={19} />
                 <View style={{ gap: 5 }}>
                   <T style={{ fontFamily: font.bold }}>
                     {circle.category} Circle
                   </T>
-                  <T style={{ fontSize: 12, color: c.muted }}>
+                  <T style={{ fontSize: 12, color: palette.muted }}>
                     {members.length} people, one shared space
                   </T>
                 </View>
               </View>
               <View style={s.aboutRow}>
-                <Lock color={c.teal} size={19} />
+                <Lock color={palette.teal} size={19} />
                 <View style={{ gap: 5, flex: 1 }}>
                   <T style={{ fontFamily: font.bold }}>
                     Private to approved members
                   </T>
-                  <T style={{ fontSize: 12, color: c.muted, lineHeight: 20 }}>
+                  <T
+                    style={{
+                      fontSize: 12,
+                      color: palette.muted,
+                      lineHeight: 20,
+                    }}
+                  >
                     Only members can see posts, photos, and conversations.{" "}
                     {circle.discoverable
                       ? "People can discover the Circle and request access."
@@ -939,7 +1056,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   </T>
                 </View>
               </View>
-              <T style={{ color: c.muted, fontSize: 11 }}>
+              <T style={{ color: palette.muted, fontSize: 11 }}>
                 Created{" "}
                 {new Date(circle.createdAt).toLocaleDateString(undefined, {
                   month: "long",
@@ -948,7 +1065,9 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 })}
               </T>
               {membership.role === "owner" ? (
-                <T style={{ fontSize: 12, color: c.muted, lineHeight: 20 }}>
+                <T
+                  style={{ fontSize: 12, color: palette.muted, lineHeight: 20 }}
+                >
                   You own this Circle. Transfer ownership to another member from
                   the Members tab before leaving.
                 </T>
@@ -958,10 +1077,10 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                     gap: 12,
                     paddingTop: 15,
                     borderTopWidth: 1,
-                    borderColor: c.line,
+                    borderColor: palette.line,
                   }}
                 >
-                  <T style={{ color: c.red }}>
+                  <T style={{ color: palette.red }}>
                     Leave this Circle? You will lose access to its posts and
                     chat.
                   </T>
@@ -988,12 +1107,18 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               <View
                 style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
               >
-                <Shield size={22} color={c.teal} />
+                <Shield size={22} color={palette.teal} />
                 <View style={{ flex: 1, gap: 6 }}>
                   <T style={{ fontFamily: font.heading, fontSize: 20 }}>
                     Look after your Circle
                   </T>
-                  <T style={{ color: c.muted, fontSize: 12, lineHeight: 19 }}>
+                  <T
+                    style={{
+                      color: palette.muted,
+                      fontSize: 12,
+                      lineHeight: 19,
+                    }}
+                  >
                     Review content flagged by your members. Reports are only
                     visible to moderators and the person who submitted them.
                   </T>
@@ -1001,13 +1126,13 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               </View>
               {!circleReports.length ? (
                 <View style={{ padding: 35, alignItems: "center", gap: 12 }}>
-                  <Check size={29} color={c.teal} />
+                  <Check size={29} color={palette.teal} />
                   <T style={{ fontFamily: font.bold }}>
                     A little peace of mind.
                   </T>
                   <T
                     style={{
-                      color: c.muted,
+                      color: palette.muted,
                       textAlign: "center",
                       fontSize: 12,
                     }}
@@ -1032,7 +1157,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                       style={{
                         paddingTop: 20,
                         borderTopWidth: 1,
-                        borderColor: c.line,
+                        borderColor: palette.line,
                         gap: 12,
                       }}
                     >
@@ -1053,13 +1178,13 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                             justifyContent: "center",
                           }}
                         >
-                          <Flag size={15} color={c.orange} />
+                          <Flag size={15} color={palette.orange} />
                         </View>
                         <View style={{ flex: 1, gap: 4 }}>
                           <T style={{ fontFamily: font.bold, fontSize: 12 }}>
                             Reported {report.targetType}
                           </T>
-                          <T style={{ color: c.muted, fontSize: 10 }}>
+                          <T style={{ color: palette.muted, fontSize: 10 }}>
                             {reporter?.name || "Circle member"} ·{" "}
                             {new Date(report.createdAt).toLocaleDateString()}
                           </T>
@@ -1067,7 +1192,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                         <T
                           style={{
                             fontSize: 10,
-                            color: target ? c.orange : c.muted,
+                            color: target ? palette.orange : palette.muted,
                           }}
                         >
                           {target ? "Needs review" : "Content removed"}
@@ -1088,7 +1213,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                           <T
                             style={{
                               fontSize: 9,
-                              color: c.muted,
+                              color: palette.muted,
                               fontFamily: font.bold,
                               letterSpacing: 1,
                             }}
@@ -1133,7 +1258,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                           <T
                             style={{
                               fontSize: 11,
-                              color: c.muted,
+                              color: palette.muted,
                               flex: 1,
                               lineHeight: 18,
                             }}
@@ -1149,78 +1274,81 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
             </Card>
           )}
           {tab === "Settings" && isManager && (
-            <Card
-              style={{
-                padding: 28,
-                maxWidth: 750,
-                width: "100%",
-                alignSelf: "center",
-                gap: 12,
-              }}
-            >
-              <SectionTitle title="Make this space your own" />
-              <Field
-                label="Circle name"
-                value={editName}
-                onChangeText={setEditName}
-                maxLength={80}
-              />
-              <Field
-                label="Description"
-                value={editDescription}
-                onChangeText={setEditDescription}
-                multiline
-                maxLength={1000}
-              />
-              <View style={s.settingRow}>
-                <View style={{ flex: 1, gap: 5 }}>
-                  <T style={{ fontFamily: font.bold }}>Discoverable Circle</T>
-                  <T style={{ fontSize: 12, color: c.muted }}>
-                    Your Circle can be found. Content always stays private.
-                  </T>
-                </View>
-                <Switch
-                  accessibilityLabel="Discoverable Circle"
-                  value={discoverable}
-                  onValueChange={setDiscoverable}
-                  trackColor={{ false: "#DAE3DC", true: c.teal }}
-                  thumbColor="white"
-                />
-              </View>
-              <View style={s.settingRow}>
-                <View style={{ flex: 1, gap: 5 }}>
-                  <T style={{ fontFamily: font.bold }}>Approve new members</T>
-                  <T style={{ fontSize: 12, color: c.muted }}>
-                    Review requests before people join.
-                  </T>
-                </View>
-                <Switch
-                  accessibilityLabel="Require membership approval"
-                  value={approval}
-                  onValueChange={setApproval}
-                  trackColor={{ false: "#DAE3DC", true: c.teal }}
-                  thumbColor="white"
-                />
-              </View>
-              <Button
-                onPress={() =>
-                  handle(
-                    actions.updateCircle(id, {
-                      name: editName.trim(),
-                      description: editDescription.trim(),
-                      discoverable,
-                      approvalRequired: approval,
-                    }),
-                    "Your Circle settings have been saved.",
-                  )
-                }
+            <View style={{ gap: 22 }}>
+              <ThemeEditor circleId={id} />
+              <Card
+                style={{
+                  padding: 28,
+                  maxWidth: 750,
+                  width: "100%",
+                  alignSelf: "center",
+                  gap: 12,
+                }}
               >
-                Save Circle settings
-              </Button>
-              <Button secondary icon={UserPlus} onPress={invitePeople}>
-                Create a private invitation
-              </Button>
-            </Card>
+                <SectionTitle title="Make this space your own" />
+                <Field
+                  label="Circle name"
+                  value={editName}
+                  onChangeText={setEditName}
+                  maxLength={80}
+                />
+                <Field
+                  label="Description"
+                  value={editDescription}
+                  onChangeText={setEditDescription}
+                  multiline
+                  maxLength={1000}
+                />
+                <View style={s.settingRow}>
+                  <View style={{ flex: 1, gap: 5 }}>
+                    <T style={{ fontFamily: font.bold }}>Discoverable Circle</T>
+                    <T style={{ fontSize: 12, color: palette.muted }}>
+                      Your Circle can be found. Content always stays private.
+                    </T>
+                  </View>
+                  <Switch
+                    accessibilityLabel="Discoverable Circle"
+                    value={discoverable}
+                    onValueChange={setDiscoverable}
+                    trackColor={{ false: "#DAE3DC", true: palette.teal }}
+                    thumbColor="white"
+                  />
+                </View>
+                <View style={s.settingRow}>
+                  <View style={{ flex: 1, gap: 5 }}>
+                    <T style={{ fontFamily: font.bold }}>Approve new members</T>
+                    <T style={{ fontSize: 12, color: palette.muted }}>
+                      Review requests before people join.
+                    </T>
+                  </View>
+                  <Switch
+                    accessibilityLabel="Require membership approval"
+                    value={approval}
+                    onValueChange={setApproval}
+                    trackColor={{ false: "#DAE3DC", true: palette.teal }}
+                    thumbColor="white"
+                  />
+                </View>
+                <Button
+                  onPress={() =>
+                    handle(
+                      actions.updateCircle(id, {
+                        name: editName.trim(),
+                        description: editDescription.trim(),
+                        discoverable,
+                        approvalRequired: approval,
+                      }),
+                      "Your Circle settings have been saved.",
+                    )
+                  }
+                >
+                  Save Circle settings
+                </Button>
+                <Button secondary icon={UserPlus} onPress={invitePeople}>
+                  Create a private invitation
+                </Button>
+              </Card>
+            </View>
           )}
         </>
       )}

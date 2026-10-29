@@ -15,7 +15,6 @@ import {
   Smile,
   ChevronDown,
   ArrowUpRight,
-  LockKeyhole,
   Sparkles,
   ArrowRight,
   X,
@@ -33,6 +32,7 @@ import {
 } from "../src/ui/primitives";
 import { PostCard } from "../src/ui/PostCard";
 import { colors as c, font } from "../src/ui/theme";
+import { HomeCatchUpCard } from "../src/features/HomeCatchUpCard";
 export default function Home() {
   const { user, ready, joinedCircles, feed, state } = useCircle();
   const [filter, setFilter] = useState("all");
@@ -351,68 +351,7 @@ export default function Home() {
         </View>
         {wide && (
           <View style={{ width: 276, gap: 23 }}>
-            <Card
-              style={{
-                padding: 22,
-                backgroundColor: "#F0F4E9",
-                borderColor: "#E7EDDC",
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                }}
-              >
-                <View
-                  style={{
-                    width: 37,
-                    height: 37,
-                    backgroundColor: "#E0E8CF",
-                    borderRadius: 13,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <LockKeyhole size={17} color="#78925F" />
-                </View>
-                <T style={{ color: "#B4C49D", fontSize: 35, lineHeight: 38 }}>
-                  ✳
-                </T>
-              </View>
-              <T
-                style={{
-                  fontFamily: font.heading,
-                  fontSize: 21,
-                  lineHeight: 29,
-                  letterSpacing: -0.6,
-                  marginTop: 18,
-                }}
-              >
-                {"Small circles.\nDeeper connections."}
-              </T>
-              <T
-                style={{
-                  fontSize: 11,
-                  lineHeight: 19,
-                  color: "#8A967B",
-                  marginTop: 10,
-                }}
-              >
-                {
-                  "Not everyone needs to see everything.\nJust the people who get you."
-                }
-              </T>
-              <View
-                style={{
-                  width: 30,
-                  height: 2,
-                  backgroundColor: "#BBC9A6",
-                  marginTop: 21,
-                  marginBottom: 5,
-                }}
-              />
-            </Card>
+            <HomeCatchUpCard />
             <Card style={{ padding: 20 }}>
               <SectionTitle title="Around your Circles" />
               <View style={{ gap: 19 }}>

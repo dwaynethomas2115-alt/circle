@@ -11,6 +11,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { CircleProvider, useCircle } from "../src/state/CircleProvider";
 import { Loading, Banner } from "../src/ui/primitives";
 import { Shell } from "../src/ui/Shell";
+import { CircleFeaturesProvider } from "../src/features/CircleFeaturesProvider";
 export default function Layout() {
   const [fontsLoaded] = useFonts({
     DMSans_400Regular,
@@ -23,13 +24,15 @@ export default function Layout() {
   return (
     <SafeAreaProvider>
       <CircleProvider>
-        <SafeAreaView
-          style={{ flex: 1, backgroundColor: "#fff" }}
-          edges={["top", "left", "right"]}
-        >
-          <StatusBar style="dark" />
-          <Gate />
-        </SafeAreaView>
+        <CircleFeaturesProvider>
+          <SafeAreaView
+            style={{ flex: 1, backgroundColor: "#fff" }}
+            edges={["top", "left", "right"]}
+          >
+            <StatusBar style="dark" />
+            <Gate />
+          </SafeAreaView>
+        </CircleFeaturesProvider>
       </CircleProvider>
     </SafeAreaProvider>
   );

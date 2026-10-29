@@ -1,5 +1,11 @@
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { requireSupabase } from "./supabase";
+import {
+  MEDIA_MAX_BYTES,
+  PHOTO_JPEG_QUALITY,
+  photoResize,
+  validateMedia,
+} from "./media";
 
 export type CircleRole = "owner" | "admin" | "moderator" | "member";
 export type CircleCategory =
@@ -389,22 +395,49 @@ export const backend = {
     if (type === "image") {
       // Decoding/re-encoding removes source EXIF/GPS. Never upload originals.
       const context = ImageManipulator.manipulate(uri);
-      context.resize({ width: 1600 });
-      const rendered = await context.renderAsync();
+      const original = await context.renderAsync();
+      const resize = photoResize(original.width, original.height);
+      if (resize) context.resize(resize);
+      const rendered = resize ? await context.renderAsync() : original;
       const image = await rendered.saveAsync({
         format: SaveFormat.JPEG,
-        compress: 0.85,
+        compress: PHOTO_JPEG_QUALITY,
       });
       uploadUri = image.uri;
       contentType = "image/jpeg";
-    } else if (!durationMs || durationMs > 60000) {
-      throw new Error("Choose a video up to 60 seconds long.");
+    } else {
+      const error = validateMedia({ type, durationMs });
+      if (error) throw new Error(error);
     }
     const response = await fetch(uploadUri);
+    if (!response.ok)
+      throw new Error(
+        "This media file could not be read. Please select it again.",
+      );
     const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > 50 * 1024 * 1024)
+    if (bytes.byteLength > MEDIA_MAX_BYTES)
       throw new Error("Media must be under 50 MB.");
-    const path = `${circleId}/${await userId()}/${Date.now()}-${Math.random().toString(36).slice(2)}.${type === "image" ? "jpg" : "mp4"}`;
+    if (type === "video") {
+      const mime = response.headers
+        .get("content-type")
+        ?.split(";")[0]
+        .toLowerCase();
+      if (mime && mime !== "application/octet-stream") {
+        const error = validateMedia({ type, durationMs, mimeType: mime });
+        if (error) throw new Error(error);
+      }
+      contentType =
+        mime === "video/quicktime" || /\.mov(?:[?#]|$)/i.test(uri)
+          ? "video/quicktime"
+          : "video/mp4";
+    }
+    const extension =
+      type === "image"
+        ? "jpg"
+        : contentType === "video/quicktime"
+          ? "mov"
+          : "mp4";
+    const path = `${circleId}/${await userId()}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
     const { error } = await requireSupabase()
       .storage.from("circle-media")
       .upload(path, bytes, { contentType, upsert: false });
