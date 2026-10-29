@@ -32,7 +32,7 @@ import {
 } from "../src/ui/primitives";
 import { PostCard } from "../src/ui/PostCard";
 import { colors as c, font } from "../src/ui/theme";
-import { HomeCatchUpCard } from "../src/features/HomeCatchUpCard";
+import { HomeHighlightsCard } from "../src/features/HomeHighlightsCard";
 export default function Home() {
   const { user, ready, joinedCircles, feed, state } = useCircle();
   const [filter, setFilter] = useState("all");
@@ -93,7 +93,7 @@ export default function Home() {
             <T style={{ fontSize: 29 }}>.</T> <T style={{ fontSize: 23 }}>☀️</T>
           </T>
           <T style={{ color: "#8A988D", fontSize: 12, marginTop: 9 }}>
-            A little catch-up with the people who matter most.
+            The latest moments from the people who matter most.
           </T>
         </View>
         {width > 650 && (
@@ -351,7 +351,7 @@ export default function Home() {
         </View>
         {wide && (
           <View style={{ width: 276, gap: 23 }}>
-            <HomeCatchUpCard />
+            <HomeHighlightsCard />
             <Card style={{ padding: 20 }}>
               <SectionTitle title="Around your Circles" />
               <View style={{ gap: 19 }}>

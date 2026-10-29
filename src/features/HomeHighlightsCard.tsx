@@ -7,7 +7,7 @@ import { useCircleFeatures } from "./CircleFeaturesProvider";
 import { buildCatchUp } from "./catchup";
 import { T, Card, CircleAvatar } from "../ui/primitives";
 import { font, colors as c } from "../ui/theme";
-export function HomeCatchUpCard() {
+export function HomeHighlightsCard() {
   const { state, joinedCircles } = useCircle();
   const features = useCircleFeatures();
   const summaries = joinedCircles.map((circle) => ({
@@ -50,7 +50,7 @@ export function HomeCatchUpCard() {
             letterSpacing: 1.3,
           }}
         >
-          CIRCLE LATELY
+          HIGHLIGHTS
         </T>
       </View>
       <T
@@ -63,8 +63,8 @@ export function HomeCatchUpCard() {
         }}
       >
         {total
-          ? "A little catch-up.\nA lot of connection."
-          : "All caught up.\nStill close."}
+          ? "Your Highlights.\nA little closer."
+          : "Your Highlights.\nWorth another look."}
       </T>
       <T
         style={{
@@ -84,8 +84,8 @@ export function HomeCatchUpCard() {
           <Pressable
             key={circle.id}
             accessibilityRole="link"
-            accessibilityLabel={`Catch up with ${circle.name}`}
-            onPress={() => router.push(`/circle/${circle.id}?tab=catch-up`)}
+            accessibilityLabel={`View Highlights from ${circle.name}`}
+            onPress={() => router.push(`/circle/${circle.id}?tab=highlights`)}
             style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
           >
             <CircleAvatar

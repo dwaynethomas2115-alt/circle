@@ -27,6 +27,8 @@ import {
   KeyRound,
   Flag,
   Video,
+  CalendarDays,
+  BarChart3,
 } from "lucide-react-native";
 import { useCircle } from "../../src/state/CircleProvider";
 import { visibleMessages } from "../../src/state/model";
@@ -45,30 +47,22 @@ import { PostCard } from "../../src/ui/PostCard";
 import { colors as c, font } from "../../src/ui/theme";
 import type { Result } from "../../src/types";
 import { PollsPanel } from "../../src/features/PollsPanel";
+import { useCircleFeatures } from "../../src/features/CircleFeaturesProvider";
 import { CalendarPanel } from "../../src/features/CalendarPanel";
-import { CatchUpPanel } from "../../src/features/CatchUpPanel";
+import { HighlightsPanel } from "../../src/features/HighlightsPanel";
 import { ThemeEditor } from "../../src/features/ThemeEditor";
 import { CircleRoom } from "../../src/features/room/CircleRoom";
 import { useCircleTheme, themeTint } from "../../src/features/theme-context";
 type Tab =
-  | "Feed"
-  | "Catch up"
-  | "Chat"
-  | "Calendar"
-  | "Polls"
-  | "Room"
-  | "Members"
-  | "About"
-  | "Settings"
-  | "Reports";
+  "Feed" | "Highlights" | "Chat" | "Members" | "About" | "Settings" | "Reports";
+type CircleSurface = "calendar" | "room" | null;
 const routeTabs: Record<string, Tab> = {
   feed: "Feed",
   chat: "Chat",
-  "catch-up": "Catch up",
-  catchup: "Catch up",
-  calendar: "Calendar",
-  polls: "Polls",
-  room: "Room",
+  highlights: "Highlights",
+  "catch-up": "Highlights",
+  catchup: "Highlights",
+  polls: "Chat",
   members: "Members",
   about: "About",
   settings: "Settings",
@@ -92,6 +86,7 @@ export default function CircleDetailRoute() {
 }
 function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const { state, user, feed, actions } = useCircle();
+  const features = useCircleFeatures();
   const theme = useCircleTheme();
   const palette = {
     ...c,
@@ -103,6 +98,16 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const { width } = useWindowDimensions();
   const [tab, setTab] = useState<Tab>(
     routeTabs[initialTab?.toLowerCase() || ""] || "Feed",
+  );
+  const [surface, setSurface] = useState<CircleSurface>(
+    initialTab?.toLowerCase() === "calendar"
+      ? "calendar"
+      : initialTab?.toLowerCase() === "room"
+        ? "room"
+        : null,
+  );
+  const [pollComposerOpen, setPollComposerOpen] = useState(
+    initialTab?.toLowerCase() === "polls",
   );
   const [notice, setNotice] = useState("");
   const [message, setMessage] = useState("");
@@ -126,6 +131,26 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   );
   const posts = feed.filter((x) => x.circleId === id);
   const messages = visibleMessages(state, id || "");
+  const timeline = [
+    ...messages.map((message) => ({
+      kind: "message" as const,
+      id: message.id,
+      createdAt: message.createdAt,
+      message,
+    })),
+    ...features.polls
+      .filter((poll) => poll.circleId === id)
+      .map((poll) => ({
+        kind: "poll" as const,
+        id: poll.id,
+        createdAt: poll.createdAt,
+        poll,
+      })),
+  ].sort(
+    (a, b) =>
+      Date.parse(a.createdAt) - Date.parse(b.createdAt) ||
+      a.id.localeCompare(b.id),
+  );
   const circleReports = state.reports.filter((report) => {
     if (report.circleId) return report.circleId === id;
     if (report.targetType === "message")
@@ -147,6 +172,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   );
   const [approval, setApproval] = useState(circle?.approvalRequired ?? true);
   const chatScroll = useRef<ScrollView>(null);
+  const chatNearBottom = useRef(true);
   useEffect(() => {
     if (circle) {
       setEditName(circle.name);
@@ -170,6 +196,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
     try {
       const result = await actions.sendMessage(id, message.trim());
       if (result.ok) {
+        chatNearBottom.current = true;
         setMessage("");
         setTimeout(
           () => chatScroll.current?.scrollToEnd({ animated: true }),
@@ -342,12 +369,27 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 <Button
                   secondary
                   icon={MessageCircle}
-                  onPress={() => setTab("Chat")}
+                  onPress={() => {
+                    setSurface(null);
+                    chatNearBottom.current = true;
+                    setTab("Chat");
+                  }}
                 >
                   Group chat
                 </Button>
-                <Button secondary icon={Video} onPress={() => setTab("Room")}>
+                <Button
+                  secondary
+                  icon={Video}
+                  onPress={() => setSurface("room")}
+                >
                   Join room
+                </Button>
+                <Button
+                  secondary
+                  icon={CalendarDays}
+                  onPress={() => setSurface("calendar")}
+                >
+                  Calendar
                 </Button>
                 <Button
                   icon={Plus}
@@ -391,11 +433,8 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
             {(
               [
                 "Feed",
-                "Catch up",
+                "Highlights",
                 "Chat",
-                "Calendar",
-                "Polls",
-                "Room",
                 "Members",
                 "About",
                 ...(isModerator ? ["Reports"] : []),
@@ -404,15 +443,20 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
             ).map((label) => (
               <Pressable
                 accessibilityRole="tab"
-                accessibilityState={{ selected: tab === label }}
-                aria-selected={tab === label}
+                accessibilityState={{ selected: !surface && tab === label }}
+                aria-selected={!surface && tab === label}
                 key={label}
-                onPress={() => setTab(label)}
+                onPress={() => {
+                  setSurface(null);
+                  if (label === "Chat") chatNearBottom.current = true;
+                  setTab(label);
+                }}
                 style={{
                   paddingHorizontal: width < 650 ? 12 : 20,
                   paddingVertical: 17,
                   borderBottomWidth: 2,
-                  borderColor: tab === label ? palette.teal : "transparent",
+                  borderColor:
+                    !surface && tab === label ? palette.teal : "transparent",
                 }}
               >
                 <View
@@ -421,24 +465,33 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   {label === "Chat" ? (
                     <MessageCircle
                       size={15}
-                      color={tab === label ? palette.teal : palette.muted}
+                      color={
+                        !surface && tab === label ? palette.teal : palette.muted
+                      }
                     />
                   ) : label === "Members" ? (
                     <Users
                       size={15}
-                      color={tab === label ? palette.teal : palette.muted}
+                      color={
+                        !surface && tab === label ? palette.teal : palette.muted
+                      }
                     />
                   ) : label === "Settings" ? (
                     <Settings
                       size={15}
-                      color={tab === label ? palette.teal : palette.muted}
+                      color={
+                        !surface && tab === label ? palette.teal : palette.muted
+                      }
                     />
                   ) : null}
                   <T
                     style={{
                       fontSize: 12,
                       fontFamily: font.bold,
-                      color: tab === label ? palette.teal : palette.muted,
+                      color:
+                        !surface && tab === label
+                          ? palette.teal
+                          : palette.muted,
                     }}
                   >
                     {label}
@@ -501,17 +554,55 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
         </Empty>
       ) : (
         <>
-          {tab === "Catch up" && <CatchUpPanel circleId={id} />}
-          {tab === "Calendar" && <CalendarPanel circleId={id} />}
-          {tab === "Polls" && <PollsPanel circleId={id} />}
-          {tab === "Room" && (
+          {surface && (
+            <View style={{ gap: 20 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 14,
+                  flexWrap: "wrap",
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  {surface === "calendar" ? (
+                    <CalendarDays size={22} color={palette.teal} />
+                  ) : (
+                    <Video size={22} color={palette.teal} />
+                  )}
+                  <T style={{ fontFamily: font.heading, fontSize: 23 }}>
+                    {surface === "calendar" ? "Circle calendar" : "Circle room"}
+                  </T>
+                </View>
+                <Button
+                  secondary
+                  icon={ArrowLeft}
+                  onPress={() => setSurface(null)}
+                >
+                  Back to Circle
+                </Button>
+              </View>
+              {surface === "calendar" && <CalendarPanel circleId={id} />}
+            </View>
+          )}
+          {!surface && tab === "Highlights" && (
+            <HighlightsPanel circleId={id} />
+          )}
+          {surface === "room" && (
             <CircleRoom
               circleId={id}
               circleName={circle.name}
-              onClose={() => setTab("Feed")}
+              onClose={() => setSurface(null)}
             />
           )}
-          {tab === "Feed" && (
+          {!surface && tab === "Feed" && (
             <View
               style={{
                 maxWidth: 750,
@@ -558,205 +649,267 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
             </View>
           )}
           {tab === "Chat" && (
-            <Card style={{ maxWidth: 850, width: "100%", alignSelf: "center" }}>
-              <View
-                style={{
-                  padding: 23,
-                  borderBottomWidth: 1,
-                  borderColor: palette.line,
-                  flexDirection: "row",
-                  gap: 12,
-                  alignItems: "center",
-                }}
+            <View style={{ display: surface ? "none" : "flex" }}>
+              <Card
+                style={{ maxWidth: 850, width: "100%", alignSelf: "center" }}
               >
                 <View
                   style={{
-                    height: 40,
-                    width: 40,
-                    borderRadius: 14,
-                    backgroundColor: palette.mint,
+                    padding: 23,
+                    borderBottomWidth: 1,
+                    borderColor: palette.line,
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 12,
                     alignItems: "center",
-                    justifyContent: "center",
                   }}
                 >
-                  <MessageCircle size={21} color={palette.teal} />
-                </View>
-                <View style={{ gap: 4 }}>
-                  <T style={{ fontFamily: font.heading, fontSize: 17 }}>
-                    Full-Circle group chat
-                  </T>
-                  <T style={{ fontSize: 11, color: palette.muted }}>
-                    All {members.length} approved members share this
-                    conversation.
-                  </T>
-                </View>
-              </View>
-              <ScrollView
-                ref={chatScroll}
-                style={{ height: 440 }}
-                contentContainerStyle={{
-                  padding: width < 650 ? 17 : 28,
-                  gap: 22,
-                }}
-                onContentSizeChange={() =>
-                  chatScroll.current?.scrollToEnd({ animated: true })
-                }
-              >
-                {!messages.length && (
-                  <View style={{ padding: 40, gap: 12, alignItems: "center" }}>
-                    <MessageCircle color={palette.muted} size={32} />
-                    <T style={{ color: palette.muted, textAlign: "center" }}>
-                      Say the first hello.
+                  <View
+                    style={{
+                      height: 40,
+                      width: 40,
+                      borderRadius: 14,
+                      backgroundColor: palette.mint,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <MessageCircle size={21} color={palette.teal} />
+                  </View>
+                  <View style={{ gap: 4, flex: 1, minWidth: 160 }}>
+                    <T style={{ fontFamily: font.heading, fontSize: 17 }}>
+                      Full-Circle group chat
+                    </T>
+                    <T style={{ fontSize: 11, color: palette.muted }}>
+                      All {members.length} approved members share this
+                      conversation.
                     </T>
                   </View>
+                  <Button
+                    secondary
+                    icon={pollComposerOpen ? X : BarChart3}
+                    style={{ marginLeft: "auto" }}
+                    onPress={() => setPollComposerOpen(!pollComposerOpen)}
+                  >
+                    {pollComposerOpen ? "Cancel poll" : "Compose poll"}
+                  </Button>
+                </View>
+                {features.error && (
+                  <View style={{ paddingHorizontal: 20 }}>
+                    <Banner text={features.error} />
+                  </View>
                 )}
-                {messages.map((msg) => {
-                  const author = state.users.find((x) => x.id === msg.authorId);
-                  const own = msg.authorId === user?.id;
-                  return (
-                    <View
-                      key={msg.id}
-                      style={{
-                        flexDirection: own ? "row-reverse" : "row",
-                        gap: 10,
-                        alignItems: "flex-end",
+                {pollComposerOpen && (
+                  <View
+                    style={{
+                      padding: width < 650 ? 12 : 20,
+                      backgroundColor: palette.mint,
+                    }}
+                  >
+                    <PollsPanel
+                      circleId={id}
+                      embedded
+                      composerOpen
+                      onComposerClose={() => {
+                        setPollComposerOpen(false);
+                        chatNearBottom.current = true;
+                        setTimeout(
+                          () =>
+                            chatScroll.current?.scrollToEnd({ animated: true }),
+                          100,
+                        );
                       }}
+                      hidePolls
+                    />
+                  </View>
+                )}
+                <ScrollView
+                  ref={chatScroll}
+                  style={{ height: 440 }}
+                  contentContainerStyle={{
+                    padding: width < 650 ? 17 : 28,
+                    gap: 22,
+                  }}
+                  onScroll={({ nativeEvent }) => {
+                    if (surface) return;
+                    chatNearBottom.current =
+                      nativeEvent.contentOffset.y +
+                        nativeEvent.layoutMeasurement.height >=
+                      nativeEvent.contentSize.height - 80;
+                  }}
+                  scrollEventThrottle={100}
+                  onContentSizeChange={() => {
+                    if (!surface && chatNearBottom.current)
+                      chatScroll.current?.scrollToEnd({ animated: true });
+                  }}
+                >
+                  {!timeline.length && (
+                    <View
+                      style={{ padding: 40, gap: 12, alignItems: "center" }}
                     >
-                      {!own && (
-                        <Avatar
-                          uri={author?.avatar}
-                          name={author?.name || "Circle member"}
-                          size={30}
-                        />
-                      )}
+                      <MessageCircle color={palette.muted} size={32} />
+                      <T style={{ color: palette.muted, textAlign: "center" }}>
+                        Say the first hello.
+                      </T>
+                    </View>
+                  )}
+                  {timeline.map((item) => {
+                    if (item.kind === "poll")
+                      return (
+                        <View key={`poll-${item.id}`} style={{ width: "100%" }}>
+                          <PollsPanel circleId={id} pollId={item.id} embedded />
+                        </View>
+                      );
+                    const msg = item.message;
+                    const author = state.users.find(
+                      (x) => x.id === msg.authorId,
+                    );
+                    const own = msg.authorId === user?.id;
+                    return (
                       <View
+                        key={msg.id}
                         style={{
-                          maxWidth: "80%",
-                          gap: 6,
-                          alignItems: own ? "flex-end" : "flex-start",
+                          flexDirection: own ? "row-reverse" : "row",
+                          gap: 10,
+                          alignItems: "flex-end",
                         }}
                       >
                         {!own && (
-                          <T
-                            style={{
-                              fontSize: 10,
-                              fontFamily: font.bold,
-                              color: palette.muted,
-                            }}
-                          >
-                            {author?.name || "Circle member"}
-                          </T>
+                          <Avatar
+                            uri={author?.avatar}
+                            name={author?.name || "Circle member"}
+                            size={30}
+                          />
                         )}
                         <View
                           style={{
-                            padding: 13,
-                            borderRadius: 15,
-                            borderBottomRightRadius: own ? 4 : 15,
-                            borderBottomLeftRadius: own ? 15 : 4,
-                            backgroundColor: own ? palette.teal : "#F0F4EF",
+                            maxWidth: "80%",
+                            gap: 6,
+                            alignItems: own ? "flex-end" : "flex-start",
                           }}
                         >
-                          <T
+                          {!own && (
+                            <T
+                              style={{
+                                fontSize: 10,
+                                fontFamily: font.bold,
+                                color: palette.muted,
+                              }}
+                            >
+                              {author?.name || "Circle member"}
+                            </T>
+                          )}
+                          <View
                             style={{
-                              color: own ? "white" : palette.ink,
-                              lineHeight: 21,
+                              padding: 13,
+                              borderRadius: 15,
+                              borderBottomRightRadius: own ? 4 : 15,
+                              borderBottomLeftRadius: own ? 15 : 4,
+                              backgroundColor: own ? palette.teal : "#F0F4EF",
                             }}
                           >
-                            {msg.content}
-                          </T>
-                        </View>
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            gap: 9,
-                            alignItems: "center",
-                          }}
-                        >
-                          <T style={{ fontSize: 9, color: palette.muted }}>
-                            {new Date(msg.createdAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </T>
-                          {(own || isModerator) && (
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Delete message"
-                              onPress={() =>
-                                handle(
-                                  actions.deleteMessage(msg.id),
-                                  "Message deleted.",
-                                )
-                              }
+                            <T
+                              style={{
+                                color: own ? "white" : palette.ink,
+                                lineHeight: 21,
+                              }}
                             >
-                              <Trash2 size={11} color={palette.muted} />
-                            </Pressable>
-                          )}
-                          {!own && (
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityLabel="Report message"
-                              onPress={() =>
-                                handle(
-                                  actions.report(
-                                    "message",
-                                    msg.id,
-                                    "Reported by a Circle member",
-                                  ),
-                                  "Thanks. Your report has been sent to Circle moderators.",
-                                )
-                              }
-                            >
-                              <Flag size={11} color={palette.muted} />
-                            </Pressable>
-                          )}
+                              {msg.content}
+                            </T>
+                          </View>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              gap: 9,
+                              alignItems: "center",
+                            }}
+                          >
+                            <T style={{ fontSize: 9, color: palette.muted }}>
+                              {new Date(msg.createdAt).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </T>
+                            {(own || isModerator) && (
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Delete message"
+                                onPress={() =>
+                                  handle(
+                                    actions.deleteMessage(msg.id),
+                                    "Message deleted.",
+                                  )
+                                }
+                              >
+                                <Trash2 size={11} color={palette.muted} />
+                              </Pressable>
+                            )}
+                            {!own && (
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Report message"
+                                onPress={() =>
+                                  handle(
+                                    actions.report(
+                                      "message",
+                                      msg.id,
+                                      "Reported by a Circle member",
+                                    ),
+                                    "Thanks. Your report has been sent to Circle moderators.",
+                                  )
+                                }
+                              >
+                                <Flag size={11} color={palette.muted} />
+                              </Pressable>
+                            )}
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-              <View
-                style={{
-                  margin: 18,
-                  borderRadius: 14,
-                  borderWidth: 1,
-                  borderColor: palette.line,
-                  backgroundColor: "#FAFCFA",
-                  padding: 10,
-                  paddingLeft: 15,
-                  flexDirection: "row",
-                  gap: 10,
-                  alignItems: "center",
-                }}
-              >
-                <TextInput
-                  accessibilityLabel="Message your Circle"
-                  placeholder="A little hello goes a long way…"
-                  placeholderTextColor="#98A39E"
-                  value={message}
-                  onChangeText={setMessage}
-                  maxLength={4000}
-                  onSubmitEditing={send}
+                    );
+                  })}
+                </ScrollView>
+                <View
                   style={{
-                    flex: 1,
-                    fontFamily: font.regular,
-                    fontSize: 13,
-                    color: palette.ink,
-                    paddingVertical: 8,
+                    margin: 18,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: palette.line,
+                    backgroundColor: "#FAFCFA",
+                    padding: 10,
+                    paddingLeft: 15,
+                    flexDirection: "row",
+                    gap: 10,
+                    alignItems: "center",
                   }}
-                />
-                <Button
-                  icon={Send}
-                  disabled={!message.trim() || busy}
-                  onPress={send}
                 >
-                  Send
-                </Button>
-              </View>
-            </Card>
+                  <TextInput
+                    accessibilityLabel="Message your Circle"
+                    placeholder="A little hello goes a long way…"
+                    placeholderTextColor="#98A39E"
+                    value={message}
+                    onChangeText={setMessage}
+                    maxLength={4000}
+                    onSubmitEditing={send}
+                    style={{
+                      flex: 1,
+                      fontFamily: font.regular,
+                      fontSize: 13,
+                      color: palette.ink,
+                      paddingVertical: 8,
+                    }}
+                  />
+                  <Button
+                    icon={Send}
+                    disabled={!message.trim() || busy}
+                    onPress={send}
+                  >
+                    Send
+                  </Button>
+                </View>
+              </Card>
+            </View>
           )}
-          {tab === "Members" && (
+          {!surface && tab === "Members" && (
             <View style={{ gap: 24 }}>
               {isManager && pending.length > 0 && (
                 <Card style={{ padding: 24, gap: 16 }}>
@@ -1006,7 +1159,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               </Card>
             </View>
           )}
-          {tab === "About" && (
+          {!surface && tab === "About" && (
             <Card
               style={{
                 padding: 30,
@@ -1102,7 +1255,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               )}
             </Card>
           )}
-          {tab === "Reports" && isModerator && (
+          {!surface && tab === "Reports" && isModerator && (
             <Card style={{ padding: width < 650 ? 20 : 28, gap: 20 }}>
               <View
                 style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
@@ -1273,7 +1426,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               )}
             </Card>
           )}
-          {tab === "Settings" && isManager && (
+          {!surface && tab === "Settings" && isManager && (
             <View style={{ gap: 22 }}>
               <ThemeEditor circleId={id} />
               <Card

@@ -42,7 +42,7 @@ import { font, colors as c } from "../ui/theme";
 import { useCircleTheme, themeTint } from "./theme-context";
 import { Video, timeAgo } from "../ui/PostCard";
 import type { Post } from "../types";
-export function CatchUpPanel({ circleId }: { circleId: string }) {
+export function HighlightsPanel({ circleId }: { circleId: string }) {
   const { state, mode } = useCircle();
   const theme = useCircleTheme();
   const features = useCircleFeatures();
@@ -69,8 +69,8 @@ export function CatchUpPanel({ circleId }: { circleId: string }) {
     );
     setNotice(
       result.ok
-        ? "You’re all caught up. A little closer, just like that."
-        : result.error || "Could not save your catch-up.",
+        ? "Your Highlights progress is saved. A little closer, just like that."
+        : result.error || "Could not save your Highlights progress.",
     );
     setSaving(false);
   }
@@ -113,7 +113,7 @@ export function CatchUpPanel({ circleId }: { circleId: string }) {
                   letterSpacing: 1.7,
                 }}
               >
-                THE MOMENTS BETWEEN VISITS
+                THE MOMENTS THAT BRING YOU CLOSER
               </T>
             </View>
             <T
@@ -124,7 +124,7 @@ export function CatchUpPanel({ circleId }: { circleId: string }) {
                 lineHeight: 43,
               }}
             >
-              A little while. A lot of life.
+              Your Circle’s Highlights.
             </T>
             <T
               style={{
@@ -135,7 +135,7 @@ export function CatchUpPanel({ circleId }: { circleId: string }) {
               }}
             >
               {summary.total
-                ? `${summary.total} new ${summary.total === 1 ? "update" : "updates"} from your people since your last catch-up.`
+                ? `${summary.total} new ${summary.total === 1 ? "update" : "updates"} from your people since your last visit to Highlights.`
                 : "You’re up to date. Take another look at the moments that made your week."}
             </T>
           </View>
@@ -223,7 +223,7 @@ export function CatchUpPanel({ circleId }: { circleId: string }) {
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Play Circle montage"
+            accessibilityLabel="Play Highlights montage"
             disabled={!summary.montage.length}
             onPress={() => setOpen(true)}
             style={{
@@ -395,12 +395,12 @@ export function CatchUpPanel({ circleId }: { circleId: string }) {
           }}
         >
           {mode === "demo"
-            ? "Your catch-up is saved on this device."
-            : "Your catch-up is private to your account."}{" "}
+            ? "Your Highlights progress is saved on this device."
+            : "Your Highlights progress is private to your account."}{" "}
           Your next visit starts here.
         </T>
         <Button icon={CheckCheck} onPress={markRead} disabled={saving}>
-          {saving ? "Saving…" : "I’m all caught up"}
+          {saving ? "Saving…" : "Mark highlights seen"}
         </Button>
       </View>
       {open && (
@@ -527,14 +527,14 @@ function Montage({
           {post?.mediaType !== "video" && (
             <IconButton
               icon={paused ? Play : Pause}
-              label={paused ? "Play montage" : "Pause montage"}
+              label={paused ? "Resume Highlights" : "Pause Highlights"}
               color="white"
               onPress={() => setPaused(!paused)}
             />
           )}
           <IconButton
             icon={X}
-            label="Close montage"
+            label="Close Highlights"
             onPress={onClose}
             color="white"
           />

@@ -31,7 +31,8 @@ test("local room clearly previews only this device and releases capture on stop 
       return stream;
     };
   });
-  await page.goto("/circle/football?tab=room");
+  await page.goto("/circle/football?tab=chat");
+  await page.getByRole("button", { name: "Join room", exact: true }).click();
   await expect(
     page.getByText("No remote participants or live presence are simulated.", {
       exact: true,
@@ -78,5 +79,30 @@ test("local room clearly previews only this device and releases capture on stop 
   await page.getByRole("button", { name: "Close room", exact: true }).click();
   await expect(camera).toHaveCount(0);
   await expect.poll(allStopped).toBeTruthy();
+  await expect(
+    page.getByRole("tab", { name: "Chat", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByLabel("Message your Circle", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Highlights", exact: true }).click();
+  await page.getByRole("button", { name: "Join room", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Preview camera", exact: true })
+    .click();
+  await expect
+    .poll(() => camera.evaluate((el) => (el as HTMLVideoElement).videoWidth))
+    .toBeGreaterThan(0);
+  await page
+    .getByRole("button", { name: "Back to Circle", exact: true })
+    .click();
+  await expect(camera).toHaveCount(0);
+  await expect.poll(allStopped).toBeTruthy();
+  await expect(
+    page.getByRole("tab", { name: "Highlights", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByText("Your Circle’s Highlights.", { exact: true }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });

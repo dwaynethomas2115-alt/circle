@@ -1,16 +1,110 @@
 import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 test.use({ timezoneId: "America/Whitehorse", reducedMotion: "reduce" });
 
-test("Circle polls create, change one vote, persist, close and delete", async ({
+async function expectPrimaryNavigation(page: Page) {
+  for (const name of ["Feed", "Highlights", "Chat", "About"]) {
+    await expect(page.getByRole("tab", { name, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("tab", { name: /^Members/ })).toBeVisible();
+  const tabs = (await page.getByRole("tab").allTextContents()).map((value) =>
+    value.trim(),
+  );
+  expect(tabs.slice(0, 5)).toEqual([
+    "Feed",
+    "Highlights",
+    "Chat",
+    expect.stringMatching(/^Members/),
+    "About",
+  ]);
+  for (const name of ["Room", "Calendar", "Polls", "Catch up"]) {
+    await expect(page.getByRole("tab", { name, exact: true })).toHaveCount(0);
+  }
+}
+
+test("Circle navigation keeps room and calendar in header actions and polls in Chat", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/circle/football?tab=polls");
+  await page.goto("/circle/football");
+  await expectPrimaryNavigation(page);
+  await expect(
+    page.getByRole("tab", { name: "Feed", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "Highlights", exact: true }).click();
+  await expect(
+    page.getByText("Your Circle’s Highlights.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Compose poll", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Match day plans — where are we watching?", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Everyone gets a say.", { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Calendar", exact: true }).click();
+  await expect(
+    page.getByText("Circle calendar", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveCount(
+    0,
+  );
   await page
-    .getByRole("button", { name: "Create a poll", exact: true })
+    .getByRole("button", { name: "Back to Circle", exact: true })
     .click();
+  await expect(
+    page.getByRole("tab", { name: "Chat", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByLabel("Message your Circle", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Join room", exact: true }).click();
+  await expect(
+    page.getByText("No remote participants or live presence are simulated.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Close room", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "Chat", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.goto("/circle/football?tab=polls");
+  await expect(
+    page.getByRole("tab", { name: "Chat", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Poll question", { exact: true })).toBeVisible();
+  await expectPrimaryNavigation(page);
+  await page.goto("/circle/family?tab=catch-up");
+  await expect(
+    page.getByRole("tab", { name: "Highlights", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByText("Your Circle’s Highlights.", { exact: true }),
+  ).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("Circle chat polls create, change one vote, persist, close and delete", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/circle/football?tab=chat");
+  await expect(
+    page.getByRole("tab", { name: "Chat", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByText("Everyone gets a say.", { exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Compose poll", exact: true }).click();
   const question = "Where should our next Circle picnic be?";
   await page.getByLabel("Poll question", { exact: true }).fill(question);
   await page
@@ -58,7 +152,11 @@ test("Circle calendar validates local times, creates plans and changes RSVP", as
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/circle/football?tab=calendar");
+  await page.goto("/circle/football");
+  await page.getByRole("button", { name: "Calendar", exact: true }).click();
+  await expect(
+    page.getByText("Circle calendar", { exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Create an event", exact: true })
     .click();
@@ -110,6 +208,7 @@ test("Circle calendar validates local times, creates plans and changes RSVP", as
     page.getByText("0 going · 1 maybe", { exact: true }),
   ).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "Calendar", exact: true }).click();
   await expect(maybe).toHaveAttribute("aria-pressed", "true");
   await page
     .getByRole("button", { name: `Delete event: ${title}`, exact: true })
@@ -179,39 +278,44 @@ test("theme previews apply only to one Circle and survive reload", async ({
   ).toBe("rgb(32, 59, 57)");
 });
 
-test("catch-up opens a playable private montage and saves read state", async ({
+test("Highlights opens a playable private montage and saves read state", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/circle/family?tab=catch-up");
+  await page.goto("/circle/family");
+  await page.getByRole("tab", { name: "Highlights", exact: true }).click();
   await expect(
-    page.getByText("A little while. A lot of life.", { exact: true }),
+    page.getByText("Your Circle’s Highlights.", { exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Play Circle montage", exact: true })
+    .getByRole("button", { name: "Play Highlights montage", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Close montage", exact: true }),
+    page.getByRole("button", { name: "Close Highlights", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Pause montage", exact: true })
+    .getByRole("button", { name: "Pause Highlights", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Play montage", exact: true }),
+    page.getByRole("button", { name: "Resume Highlights", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Close montage", exact: true })
+    .getByRole("button", { name: "Close Highlights", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "I’m all caught up", exact: true })
+    .getByRole("button", { name: "Mark highlights seen", exact: true })
     .click();
   await expect(
-    page.getByText("You’re all caught up. A little closer, just like that.", {
-      exact: true,
-    }),
+    page.getByText(
+      "Your Highlights progress is saved. A little closer, just like that.",
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
   await page.reload();
+  await page.getByRole("tab", { name: "Highlights", exact: true }).click();
   await expect(
     page.getByText(
       "You’re up to date. Take another look at the moments that made your week.",

@@ -20,10 +20,12 @@ New poll/event notifications use generic activity titles and the Circle ID; they
 
 Preset themes require no external service. Themes are small allowlisted data objects, not CSS, HTML, image URLs, or scripts. Only current owners/admins can save a Circle theme. Text and layout stay usable: six-digit hex colors; light backgrounds/surfaces; ink contrast at least 4.5 against both; white button text contrast at least 4.5 against accent; motif limited to `garden`, `unicorn`, `vegas`, `coast`, or `minimal`.
 
+For a beginner-friendly dashboard walkthrough, see [Connect OpenAI to Circle themes](../docs/OPENAI_SETUP.md). Decorations currently mean a color palette and a small motif, not generated wallpaper or a 3D room.
+
 For real AI generation:
 
 1. Set `OPENAI_API_KEY` securely in **Supabase Edge Function secrets**, not `.env`, Expo public variables, chat, Git, or the cloud app client. Optional `OPENAI_THEME_MODEL` defaults to `gpt-4.1-mini` and must support structured JSON output.
-2. Deploy `supabase functions deploy generate-circle-theme`. Supabase injects its project URL and server-only service role key into the Edge runtime. Keep normal authentication configured; the handler also verifies the bearer session with Auth on every request.
+2. Deploy `supabase functions deploy generate-circle-theme --use-api`, or use the dashboard editor with the existing handler. Supabase injects its project URL and server-only service role key into the Edge runtime. Keep JWT verification enabled: this endpoint is called by a signed-in user session, not a publishable key alone. The handler also verifies the bearer session with Auth on every request. Current Supabase gateway documentation supports legacy and asymmetric user JWTs; new public API key formats do not require disabling this check.
 3. Allow outbound HTTPS to `api.openai.com` in your Edge hosting network if restricted. If running integration requests from this cloud machine, allow the exact configured Supabase project hostname in cloud network settings too. Browser/mobile connections use their own network environment.
 4. As a Circle owner/admin, type a generic visual prompt and generate a proposal. Generation does **not** change the Circle theme. Preview it and explicitly save it. Other members cannot incur OpenAI calls through this endpoint.
 

@@ -53,7 +53,15 @@ export const featureBackend = {
       const response = "context" in error ? error.context : null;
       if (response instanceof Response) {
         const detail = await response.json().catch(() => null);
-        if (detail?.error) throw new Error(detail.error);
+        if (typeof detail?.error === "string") throw new Error(detail.error);
+        if (response.status === 401)
+          throw new Error(
+            "Your sign-in expired or belongs to a different Supabase project. Sign out and back in, then try again.",
+          );
+        if (response.status === 404)
+          throw new Error(
+            "The generate-circle-theme function is not deployed in this Supabase project yet. Follow the OpenAI setup guide.",
+          );
       }
       throw new Error(
         "Theme generation is unavailable. Configure the generate-circle-theme Edge Function and server-side API key.",

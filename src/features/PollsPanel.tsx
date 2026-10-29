@@ -43,7 +43,23 @@ function localDateTime(value: string): Date | null {
 }
 const zone = () =>
   Intl.DateTimeFormat().resolvedOptions().timeZone || "your device timezone";
-export function PollsPanel({ circleId }: { circleId: string }) {
+export interface PollsPanelProps {
+  circleId: string;
+  /** Embed a single poll or its composer in the Circle chat timeline. */
+  embedded?: boolean;
+  pollId?: string;
+  composerOpen?: boolean;
+  onComposerClose?: () => void;
+  hidePolls?: boolean;
+}
+export function PollsPanel({
+  circleId,
+  embedded = false,
+  pollId,
+  composerOpen,
+  onComposerClose,
+  hidePolls = false,
+}: PollsPanelProps) {
   const theme = useCircleTheme();
   const c = {
     ...baseColors,
@@ -55,7 +71,12 @@ export function PollsPanel({ circleId }: { circleId: string }) {
   const { state, user } = useCircle();
   const { polls, votes, ready, error, actions } = useCircleFeatures();
   const { width } = useWindowDimensions();
-  const [composer, setComposer] = useState(false);
+  const [localComposer, setLocalComposer] = useState(false);
+  const composer = composerOpen ?? localComposer;
+  const setComposer = (open: boolean) => {
+    if (composerOpen === undefined) setLocalComposer(open);
+    else if (!open) onComposerClose?.();
+  };
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [expiry, setExpiry] = useState("");
@@ -73,7 +94,10 @@ export function PollsPanel({ circleId }: { circleId: string }) {
     return () => clearInterval(timer);
   }, []);
   const circlePolls = polls
-    .filter((p) => p.circleId === circleId)
+    .filter(
+      (p) =>
+        !hidePolls && p.circleId === circleId && (!pollId || p.id === pollId),
+    )
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   async function run(
     key: string,
@@ -155,49 +179,51 @@ export function PollsPanel({ circleId }: { circleId: string }) {
     <View
       style={{ gap: 20, maxWidth: 850, width: "100%", alignSelf: "center" }}
     >
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 16,
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-        }}
-      >
-        <View style={{ flex: 1, minWidth: 190, gap: 7 }}>
-          <T
-            style={{
-              color: c.teal,
-              fontFamily: font.bold,
-              fontSize: 9,
-              letterSpacing: 1.6,
-            }}
-          >
-            LITTLE QUESTIONS, SHARED DECISIONS
-          </T>
-          <T
-            style={{
-              fontFamily: font.heading,
-              fontSize: 25,
-              letterSpacing: -0.6,
-            }}
-          >
-            Everyone gets a say.
-          </T>
-          <T style={{ fontSize: 12, color: c.muted, lineHeight: 20 }}>
-            Find a time, pick a place, make a little plan together.
-          </T>
-        </View>
-        <Button
-          icon={composer ? X : Plus}
-          secondary={composer}
-          onPress={() => setComposer(!composer)}
+      {!embedded && (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
+            justifyContent: "space-between",
+          }}
         >
-          {composer ? "Cancel" : "Create a poll"}
-        </Button>
-      </View>
+          <View style={{ flex: 1, minWidth: 190, gap: 7 }}>
+            <T
+              style={{
+                color: c.teal,
+                fontFamily: font.bold,
+                fontSize: 9,
+                letterSpacing: 1.6,
+              }}
+            >
+              LITTLE QUESTIONS, SHARED DECISIONS
+            </T>
+            <T
+              style={{
+                fontFamily: font.heading,
+                fontSize: 25,
+                letterSpacing: -0.6,
+              }}
+            >
+              Everyone gets a say.
+            </T>
+            <T style={{ fontSize: 12, color: c.muted, lineHeight: 20 }}>
+              Find a time, pick a place, make a little plan together.
+            </T>
+          </View>
+          <Button
+            icon={composer ? X : Plus}
+            secondary={composer}
+            onPress={() => setComposer(!composer)}
+          >
+            {composer ? "Cancel" : "Create a poll"}
+          </Button>
+        </View>
+      )}
       {notice ? <Banner text={notice} onDismiss={() => setNotice("")} /> : null}
-      {error && <Banner text={error} />}
+      {error && !pollId && <Banner text={error} />}
       {composer && (
         <Card style={{ padding: width < 600 ? 20 : 28, gap: 8 }}>
           <View
@@ -321,7 +347,7 @@ export function PollsPanel({ circleId }: { circleId: string }) {
           </Button>
         </Card>
       )}
-      {!circlePolls.length && !composer && (
+      {!embedded && !circlePolls.length && !composer && (
         <Empty
           title="A good question brings people together."
           body="Make your first poll. One vote per member, and room to change your mind."

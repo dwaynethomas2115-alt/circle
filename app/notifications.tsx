@@ -80,7 +80,7 @@ export default function Notifications() {
               letterSpacing: -0.8,
             }}
           >
-            A little catch-up
+            Your latest updates
           </T>
           <T style={{ color: c.muted, marginTop: 7 }}>
             The latest from your little world.
