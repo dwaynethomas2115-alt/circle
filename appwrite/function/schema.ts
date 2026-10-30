@@ -158,9 +158,24 @@ export const requestSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
+      kind: z.literal("prepareTheme"),
+      circleId: id,
+      prompt: text(1000).trim().min(3),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("generateTheme"),
       circleId: id,
-      prompt: text(1000).min(3),
+      prompt: text(1000).trim().min(3),
+      requestId: z.string().uuid().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("themeResult"),
+      circleId: id,
+      requestId: z.string().uuid(),
     })
     .strict(),
   z

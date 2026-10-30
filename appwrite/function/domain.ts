@@ -32,7 +32,26 @@ export interface ThemeQuota {
   attempts: number[];
   successes: { id: string; at: number }[];
   pending?: { id: string; circleId: string; startedAt: number };
+  job?: {
+    requestId: string;
+    circleId: string;
+    promptHash: string;
+    createdAt: number;
+    status: "prepared" | "processing" | "completed" | "failed";
+    failure?: ThemeFailure;
+  };
 }
+export interface ThemeFailure {
+  error: string;
+  code: string;
+  responseStatus: number;
+  retryAfterSeconds?: number;
+  resetAt?: string;
+}
+export type ThemeJobResult =
+  | { status: "pending" }
+  | { status: "completed"; theme: CircleTheme }
+  | ({ status: "failed" } & ThemeFailure);
 export interface Store {
   generations?: Record<string, number[] | ThemeQuota>;
   proposals?: Record<
@@ -124,7 +143,11 @@ export function execute(
   store: Store,
   identity: Identity,
   input: unknown,
-): { store: Store; data: AppState | FeatureState | Result } {
+): {
+  store: Store;
+  data:
+    AppState | FeatureState | Result | ThemeJobResult | { requestId: string };
+} {
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success)
     throw new Error("Invalid request. Check the fields and attachment format.");
@@ -192,14 +215,93 @@ export function execute(
     throw new Error(
       "Live rooms are not enabled for Appwrite. The local demo self-preview remains available.",
     );
-  if (request.kind === "generateTheme") {
+  if (
+    request.kind === "prepareTheme" ||
+    request.kind === "generateTheme" ||
+    request.kind === "themeResult"
+  ) {
     if (!isManager(app, request.circleId))
       throw new Error("Only Circle owners and admins can generate themes.");
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(request.circleId))
       throw new Error(
         "This Circle cannot store a wallpaper. Contact the app owner.",
       );
-    return reserveTheme(next, identity, request.circleId);
+    if (request.kind === "prepareTheme") {
+      const reserved = reserveTheme(
+        next,
+        identity,
+        request.circleId,
+        request.prompt,
+      );
+      return { store: reserved.store, data: { requestId: reserved.data.id! } };
+    }
+    if (request.kind === "generateTheme") {
+      if (!request.requestId)
+        throw new ThemeError(
+          "Refresh Circle to update wallpaper generation before trying again.",
+          409,
+          "theme_client_update_required",
+        );
+      const quota = themeQuota(next.generations?.[identity.$id]);
+      const job = quota.job;
+      if (
+        !job ||
+        job.requestId !== request.requestId ||
+        job.circleId !== request.circleId ||
+        job.promptHash !== themePromptHash(request.prompt)
+      )
+        throw unavailableTheme();
+      if (job.status !== "prepared")
+        return {
+          store: next,
+          data: { ok: true, id: job.requestId, code: "theme_existing" },
+        };
+      if (quota.pending?.id !== job.requestId) throw unavailableTheme();
+      job.status = "processing";
+      next.generations ??= {};
+      next.generations[identity.$id] = quota;
+      return {
+        store: next,
+        data: { ok: true, id: job.requestId, code: "theme_claimed" },
+      };
+    }
+    const quota = themeQuota(next.generations?.[identity.$id]);
+    const job = quota.job;
+    if (
+      !job ||
+      job.requestId !== request.requestId ||
+      job.circleId !== request.circleId
+    )
+      throw unavailableTheme();
+    if (job.status === "failed" && job.failure)
+      return { store: next, data: { status: "failed", ...job.failure } };
+    if (job.status === "completed") {
+      const proposal = next.proposals?.[identity.$id];
+      if (
+        !proposal ||
+        proposal.circleId !== request.circleId ||
+        (proposal.createdAt || 0) < Date.now() - 86_400_000 ||
+        !hasThemeCompletion(next, identity, job.requestId, proposal.theme)
+      )
+        throw unavailableTheme();
+      return {
+        store: next,
+        data: { status: "completed", theme: proposal.theme },
+      };
+    }
+    return {
+      store: next,
+      data:
+        quota.pending?.id === job.requestId
+          ? { status: "pending" }
+          : {
+              status: "failed",
+              error:
+                "This wallpaper request expired. Generate a fresh preview.",
+              code: "theme_request_expired",
+              responseStatus: 410,
+            },
+    };
   }
   if (request.kind === "themeWallpaper") {
     const circleId = request.wallpaperPath.split("/")[0];
@@ -374,6 +476,9 @@ export function themeQuota(
     ...(prior?.pending && prior.pending.startedAt > now - 600_000
       ? { pending: prior.pending }
       : {}),
+    ...(prior?.job && prior.job.createdAt > now - 86_400_000
+      ? { job: structuredClone(prior.job) }
+      : {}),
   };
 }
 export class ThemeError extends Error {
@@ -401,11 +506,20 @@ function reserveTheme(
   store: Store,
   identity: Identity,
   circleId: string,
+  prompt: string,
 ): { store: Store; data: Result } {
   const now = Date.now();
   const quota = themeQuota(store.generations?.[identity.$id], now);
   const daily = themeLimit(process.env.THEME_DAILY_LIMIT, 50, 200),
     burst = themeLimit(process.env.THEME_BURST_LIMIT, 3, 10);
+  if (
+    quota.pending &&
+    quota.job?.requestId === quota.pending.id &&
+    quota.job.circleId === circleId &&
+    quota.job.promptHash === themePromptHash(prompt) &&
+    ["prepared", "processing"].includes(quota.job.status)
+  )
+    return { store, data: { ok: true, id: quota.pending.id } };
   if (quota.pending)
     throw new ThemeError(
       "A wallpaper is already being created. Let it finish before starting another.",
@@ -438,6 +552,13 @@ function reserveTheme(
   const id = randomUUID();
   quota.attempts.push(now);
   quota.pending = { id, circleId, startedAt: now };
+  quota.job = {
+    requestId: id,
+    circleId,
+    promptHash: themePromptHash(prompt),
+    createdAt: now,
+    status: "prepared",
+  };
   store.generations ??= {};
   store.generations[identity.$id] = quota;
   return { store, data: { ok: true, id } };
@@ -484,6 +605,7 @@ export function recordTheme(
   const now = Date.now();
   quota.successes.push({ id, at: now });
   delete quota.pending;
+  if (quota.job?.requestId === id) quota.job.status = "completed";
   next.generations ??= {};
   next.generations[identity.$id] = quota;
   next.proposals ??= {};
@@ -500,13 +622,33 @@ export function failTheme(
   store: Store,
   identity: Identity,
   requestId: string,
+  failure?: ThemeFailure,
+  retainPending = false,
 ): Store {
   const next = structuredClone(store),
     quota = themeQuota(next.generations?.[identity.$id]);
-  if (quota.pending?.id === requestId) delete quota.pending;
+  if (!retainPending && quota.pending?.id === requestId) delete quota.pending;
+  if (quota.job?.requestId === requestId && quota.job.status !== "completed") {
+    quota.job.status = "failed";
+    quota.job.failure = failure || {
+      error: "The wallpaper could not be created. Please try again.",
+      code: "theme_generation_failed",
+      responseStatus: 502,
+    };
+  }
   next.generations ??= {};
   next.generations[identity.$id] = quota;
   return next;
+}
+function themePromptHash(prompt: string): string {
+  return createHash("sha256").update(prompt.trim()).digest("hex");
+}
+function unavailableTheme(): ThemeError {
+  return new ThemeError(
+    "This wallpaper request is unavailable, expired, or replaced by a newer request. Generate a fresh preview.",
+    410,
+    "theme_request_unavailable",
+  );
 }
 export function sameTheme(first: CircleTheme, second: CircleTheme): boolean {
   return (

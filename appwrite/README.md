@@ -92,6 +92,8 @@ The free plan currently permits **100 staged operations per transaction**. The a
 
 Storage sealing/deletion and OpenAI requests are not part of database transactions. Upload sealing may leave an unreferenced private file if the database commit fails. AI quota reservation commits before the provider call; provenance is recorded in a second transaction that rechecks manager membership. These are explicit recoverable boundaries, not cross-service atomicity claims.
 
+Wallpaper requests use a synchronous reservation, an idempotent background worker, and authenticated reads of the saved result/error. Appwrite omits asynchronous execution response bodies, so the client must not use `getExecution().responseBody` to retrieve a wallpaper. The latest job state is stored in the existing private `ai_quotas` JSON record; current manager access and the requesting identity are checked again when reading the result. Deploy both the updated client and Function together; see the [wallpaper deployment follow-up](../docs/WALLPAPER_DEPLOYMENT.md).
+
 ## Incremental growth and current limits
 
 There is no application-wide stored-state size limit. Each profile/post/message/comment/reaction/vote/etc. is an independent row, and media bytes live in Storage. Mutations load the entity/relationships needed for that command, not all project history; indexed queries and cursor pagination handle dependency lists beyond Appwrite's default 25 rows. Data in unrelated Circles does not enlarge a post write.

@@ -1375,9 +1375,20 @@ var requestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("action"), action: actionSchema }).strict(),
   z.object({ kind: z.literal("featureAction"), action: featureSchema }).strict(),
   z.object({
+    kind: z.literal("prepareTheme"),
+    circleId: id2,
+    prompt: text(1e3).trim().min(3)
+  }).strict(),
+  z.object({
     kind: z.literal("generateTheme"),
     circleId: id2,
-    prompt: text(1e3).min(3)
+    prompt: text(1e3).trim().min(3),
+    requestId: z.string().uuid().optional()
+  }).strict(),
+  z.object({
+    kind: z.literal("themeResult"),
+    circleId: id2,
+    requestId: z.string().uuid()
   }).strict(),
   z.object({
     kind: z.literal("themeWallpaper"),
@@ -1509,14 +1520,71 @@ function execute(store, identity, input) {
     throw new Error(
       "Live rooms are not enabled for Appwrite. The local demo self-preview remains available."
     );
-  if (request.kind === "generateTheme") {
+  if (request.kind === "prepareTheme" || request.kind === "generateTheme" || request.kind === "themeResult") {
     if (!isManager(app, request.circleId))
       throw new Error("Only Circle owners and admins can generate themes.");
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(request.circleId))
       throw new Error(
         "This Circle cannot store a wallpaper. Contact the app owner."
       );
-    return reserveTheme(next, identity, request.circleId);
+    if (request.kind === "prepareTheme") {
+      const reserved = reserveTheme(
+        next,
+        identity,
+        request.circleId,
+        request.prompt
+      );
+      return { store: reserved.store, data: { requestId: reserved.data.id } };
+    }
+    if (request.kind === "generateTheme") {
+      if (!request.requestId)
+        throw new ThemeError(
+          "Refresh Circle to update wallpaper generation before trying again.",
+          409,
+          "theme_client_update_required"
+        );
+      const quota2 = themeQuota(next.generations?.[identity.$id]);
+      const job2 = quota2.job;
+      if (!job2 || job2.requestId !== request.requestId || job2.circleId !== request.circleId || job2.promptHash !== themePromptHash(request.prompt))
+        throw unavailableTheme();
+      if (job2.status !== "prepared")
+        return {
+          store: next,
+          data: { ok: true, id: job2.requestId, code: "theme_existing" }
+        };
+      if (quota2.pending?.id !== job2.requestId) throw unavailableTheme();
+      job2.status = "processing";
+      next.generations ??= {};
+      next.generations[identity.$id] = quota2;
+      return {
+        store: next,
+        data: { ok: true, id: job2.requestId, code: "theme_claimed" }
+      };
+    }
+    const quota = themeQuota(next.generations?.[identity.$id]);
+    const job = quota.job;
+    if (!job || job.requestId !== request.requestId || job.circleId !== request.circleId)
+      throw unavailableTheme();
+    if (job.status === "failed" && job.failure)
+      return { store: next, data: { status: "failed", ...job.failure } };
+    if (job.status === "completed") {
+      const proposal = next.proposals?.[identity.$id];
+      if (!proposal || proposal.circleId !== request.circleId || (proposal.createdAt || 0) < Date.now() - 864e5 || !hasThemeCompletion(next, identity, job.requestId, proposal.theme))
+        throw unavailableTheme();
+      return {
+        store: next,
+        data: { status: "completed", theme: proposal.theme }
+      };
+    }
+    return {
+      store: next,
+      data: quota.pending?.id === job.requestId ? { status: "pending" } : {
+        status: "failed",
+        error: "This wallpaper request expired. Generate a fresh preview.",
+        code: "theme_request_expired",
+        responseStatus: 410
+      }
+    };
   }
   if (request.kind === "themeWallpaper") {
     const circleId = request.wallpaperPath.split("/")[0];
@@ -1625,7 +1693,8 @@ function themeQuota(value, now2 = Date.now()) {
     successes: (prior?.successes || []).filter(
       (t) => typeof t.id === "string" && Number.isFinite(t.at) && t.at > now2 - 864e5
     ).slice(-200),
-    ...prior?.pending && prior.pending.startedAt > now2 - 6e5 ? { pending: prior.pending } : {}
+    ...prior?.pending && prior.pending.startedAt > now2 - 6e5 ? { pending: prior.pending } : {},
+    ...prior?.job && prior.job.createdAt > now2 - 864e5 ? { job: structuredClone(prior.job) } : {}
   };
 }
 var ThemeError = class extends Error {
@@ -1651,10 +1720,12 @@ function themeLimit(raw, fallback, max) {
     );
   return value;
 }
-function reserveTheme(store, identity, circleId) {
+function reserveTheme(store, identity, circleId, prompt) {
   const now2 = Date.now();
   const quota = themeQuota(store.generations?.[identity.$id], now2);
   const daily = themeLimit(process.env.THEME_DAILY_LIMIT, 50, 200), burst = themeLimit(process.env.THEME_BURST_LIMIT, 3, 10);
+  if (quota.pending && quota.job?.requestId === quota.pending.id && quota.job.circleId === circleId && quota.job.promptHash === themePromptHash(prompt) && ["prepared", "processing"].includes(quota.job.status))
+    return { store, data: { ok: true, id: quota.pending.id } };
   if (quota.pending)
     throw new ThemeError(
       "A wallpaper is already being created. Let it finish before starting another.",
@@ -1687,6 +1758,13 @@ function reserveTheme(store, identity, circleId) {
   const id3 = randomUUID();
   quota.attempts.push(now2);
   quota.pending = { id: id3, circleId, startedAt: now2 };
+  quota.job = {
+    requestId: id3,
+    circleId,
+    promptHash: themePromptHash(prompt),
+    createdAt: now2,
+    status: "prepared"
+  };
   store.generations ??= {};
   store.generations[identity.$id] = quota;
   return { store, data: { ok: true, id: id3 } };
@@ -1714,6 +1792,7 @@ function recordTheme(store, identity, circleId, theme2, requestId) {
   const now2 = Date.now();
   quota.successes.push({ id: id3, at: now2 });
   delete quota.pending;
+  if (quota.job?.requestId === id3) quota.job.status = "completed";
   next.generations ??= {};
   next.generations[identity.$id] = quota;
   next.proposals ??= {};
@@ -1726,12 +1805,30 @@ function recordTheme(store, identity, circleId, theme2, requestId) {
   next.app.currentUserId = null;
   return next;
 }
-function failTheme(store, identity, requestId) {
+function failTheme(store, identity, requestId, failure, retainPending = false) {
   const next = structuredClone(store), quota = themeQuota(next.generations?.[identity.$id]);
-  if (quota.pending?.id === requestId) delete quota.pending;
+  if (!retainPending && quota.pending?.id === requestId) delete quota.pending;
+  if (quota.job?.requestId === requestId && quota.job.status !== "completed") {
+    quota.job.status = "failed";
+    quota.job.failure = failure || {
+      error: "The wallpaper could not be created. Please try again.",
+      code: "theme_generation_failed",
+      responseStatus: 502
+    };
+  }
   next.generations ??= {};
   next.generations[identity.$id] = quota;
   return next;
+}
+function themePromptHash(prompt) {
+  return createHash("sha256").update(prompt.trim()).digest("hex");
+}
+function unavailableTheme() {
+  return new ThemeError(
+    "This wallpaper request is unavailable, expired, or replaced by a newer request. Generate a fresh preview.",
+    410,
+    "theme_request_unavailable"
+  );
 }
 function sameTheme(first, second) {
   return Object.keys(first).length === Object.keys(second).length && Object.keys(first).every(
@@ -2593,7 +2690,7 @@ var Repository = class {
       );
     if (request.kind === "finishUpload" || request.kind === "cancelUpload")
       await get("uploads", request.fileId);
-    if (request.kind === "generateTheme" || request.kind === "themeWallpaper") {
+    if (request.kind === "prepareTheme" || request.kind === "generateTheme" || request.kind === "themeResult" || request.kind === "themeWallpaper") {
       await get("ai_quotas", identity.$id);
       await get("ai_proposals", identity.$id);
     }
@@ -2790,7 +2887,7 @@ async function main({ req, res, error }, injected) {
         "Invalid Circle request. Please check the fields and attachment format."
       );
     const request = parsed.data;
-    if (request.kind === "generateTheme" && !process.env.OPENAI_API_KEY)
+    if (request.kind === "prepareTheme" && !process.env.OPENAI_API_KEY)
       throw new ThemeError(
         "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",
         503,
@@ -2809,7 +2906,7 @@ async function main({ req, res, error }, injected) {
         )
       });
     }
-    const result = request.kind === "snapshot" || request.kind === "features" ? await repository.read(identity, request) : await repository.mutate(identity, request, async (store) => {
+    const result = request.kind === "snapshot" || request.kind === "features" || request.kind === "themeResult" ? await repository.read(identity, request) : await repository.mutate(identity, request, async (store) => {
       if (request.kind === "finishUpload")
         await sealUpload(media, store, identity, request.fileId);
       const outcome = execute(store, identity, request);
@@ -2831,8 +2928,17 @@ async function main({ req, res, error }, injected) {
       const requestId = result.data.id;
       if (!requestId)
         throw new Error("Could not reserve wallpaper generation.");
+      if (result.data.code !== "theme_claimed")
+        return res.json({ data: { ok: true } });
       let completed = false, uncertainCompletion = false, uploadStarted = false;
+      let failure;
       try {
+        if (!process.env.OPENAI_API_KEY)
+          throw new ThemeError(
+            "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",
+            503,
+            "provider_configuration"
+          );
         const generated = await (injected?.generateWallpaper ?? generateTheme)(
           request.prompt.trim(),
           process.env.OPENAI_API_KEY
@@ -2883,12 +2989,21 @@ async function main({ req, res, error }, injected) {
           502,
           "theme_completion_unconfirmed"
         );
+      } catch (cause) {
+        failure = themeFailure(cause);
+        throw cause;
       } finally {
-        if (!completed && !uncertainCompletion) {
-          if (uploadStarted)
+        if (!completed) {
+          if (!uncertainCompletion && uploadStarted)
             await wallpaper.storage.deleteFile({ bucketId: WALLPAPER_BUCKET, fileId: requestId }).catch(() => void 0);
           await repository.mutate(identity, request, async (store) => ({
-            store: failTheme(store, identity, requestId),
+            store: failTheme(
+              store,
+              identity,
+              requestId,
+              failure,
+              uncertainCompletion
+            ),
             data: { ok: true }
           })).catch(() => void 0);
         }
@@ -2931,6 +3046,27 @@ async function main({ req, res, error }, injected) {
       503
     );
   }
+}
+function themeFailure(cause) {
+  if (cause instanceof ThemeError || cause instanceof AIError)
+    return {
+      error: cause.message,
+      code: cause.code,
+      responseStatus: cause.status,
+      ...cause.retryAfterSeconds !== void 0 ? { retryAfterSeconds: cause.retryAfterSeconds } : {},
+      ...cause instanceof ThemeError && cause.resetAt ? { resetAt: cause.resetAt } : {}
+    };
+  if (cause?.code === 409)
+    return {
+      error: "Circle changed during your request. Please retry.",
+      code: "theme_conflict",
+      responseStatus: 409
+    };
+  return {
+    error: "The wallpaper could not be created. Please try again.",
+    code: "theme_generation_failed",
+    responseStatus: 502
+  };
 }
 export {
   main as default

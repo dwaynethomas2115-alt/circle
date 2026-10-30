@@ -5,6 +5,7 @@ import {
   failTheme,
   ThemeError,
   type Identity,
+  type ThemeFailure,
 } from "./domain";
 import { hydrateMedia, sealUpload, type MediaServices } from "./media";
 import { requestSchema } from "./schema";
@@ -77,7 +78,7 @@ export default async function main(
         "Invalid Circle request. Please check the fields and attachment format.",
       );
     const request = parsed.data;
-    if (request.kind === "generateTheme" && !process.env.OPENAI_API_KEY)
+    if (request.kind === "prepareTheme" && !process.env.OPENAI_API_KEY)
       throw new ThemeError(
         "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",
         503,
@@ -97,7 +98,9 @@ export default async function main(
       });
     }
     const result =
-      request.kind === "snapshot" || request.kind === "features"
+      request.kind === "snapshot" ||
+      request.kind === "features" ||
+      request.kind === "themeResult"
         ? await repository.read(identity, request)
         : await repository.mutate(identity, request, async (store) => {
             if (request.kind === "finishUpload")
@@ -129,10 +132,21 @@ export default async function main(
       const requestId = (result.data as Result).id;
       if (!requestId)
         throw new Error("Could not reserve wallpaper generation.");
+      // Only the transaction that changes prepared -> processing may call AI.
+      // Re-dispatching a prepared ID after a lost HTTP response cannot charge twice.
+      if ((result.data as Result).code !== "theme_claimed")
+        return res.json({ data: { ok: true } });
       let completed = false,
         uncertainCompletion = false,
         uploadStarted = false;
+      let failure: ThemeFailure | undefined;
       try {
+        if (!process.env.OPENAI_API_KEY)
+          throw new ThemeError(
+            "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",
+            503,
+            "provider_configuration",
+          );
         const generated = await (injected?.generateWallpaper ?? generateTheme)(
           request.prompt.trim(),
           process.env.OPENAI_API_KEY!,
@@ -190,15 +204,24 @@ export default async function main(
           502,
           "theme_completion_unconfirmed",
         );
+      } catch (cause) {
+        failure = themeFailure(cause);
+        throw cause;
       } finally {
-        if (!completed && !uncertainCompletion) {
-          if (uploadStarted)
+        if (!completed) {
+          if (!uncertainCompletion && uploadStarted)
             await wallpaper.storage
               .deleteFile({ bucketId: WALLPAPER_BUCKET, fileId: requestId })
               .catch(() => undefined);
           await repository
             .mutate(identity, request, async (store) => ({
-              store: failTheme(store, identity, requestId),
+              store: failTheme(
+                store,
+                identity,
+                requestId,
+                failure,
+                uncertainCompletion,
+              ),
               data: { ok: true },
             }))
             .catch(() => undefined);
@@ -250,4 +273,31 @@ export default async function main(
       503,
     );
   }
+}
+
+/** Persist only intentional user-facing metadata, never arbitrary provider/SDK output. */
+function themeFailure(cause: unknown): ThemeFailure {
+  if (cause instanceof ThemeError || cause instanceof AIError)
+    return {
+      error: cause.message,
+      code: cause.code,
+      responseStatus: cause.status,
+      ...(cause.retryAfterSeconds !== undefined
+        ? { retryAfterSeconds: cause.retryAfterSeconds }
+        : {}),
+      ...(cause instanceof ThemeError && cause.resetAt
+        ? { resetAt: cause.resetAt }
+        : {}),
+    };
+  if ((cause as { code?: number })?.code === 409)
+    return {
+      error: "Circle changed during your request. Please retry.",
+      code: "theme_conflict",
+      responseStatus: 409,
+    };
+  return {
+    error: "The wallpaper could not be created. Please try again.",
+    code: "theme_generation_failed",
+    responseStatus: 502,
+  };
 }

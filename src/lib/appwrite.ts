@@ -54,6 +54,7 @@ export async function invokeCircle<T>(body: unknown): Promise<T> {
     const actor = await currentAccount();
     if (!actor) throw new Error("Sign in to generate a wallpaper.");
     themeJobKey = JSON.stringify([
+      endpoint,
       project,
       functionId,
       actor.$id,

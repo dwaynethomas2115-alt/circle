@@ -146,17 +146,25 @@ test("only ready owned attachments can be published; outsiders cannot receive fi
 test("AI quota, role checks and signed-in proposal provenance are server enforced", () => {
   const f = setup(),
     request = {
-      kind: "generateTheme",
+      kind: "prepareTheme",
       circleId: f.circleId,
       prompt: "A lovely garden",
     };
   assert.throws(() => execute(f.store, eve, request), /owners and admins/);
   const reserved = execute(f.store, alice, request);
-  assert.throws(() => execute(reserved.store, alice, request), /already being/);
+  assert.deepEqual(execute(reserved.store, alice, request).data, reserved.data);
+  assert.throws(
+    () =>
+      execute(reserved.store, alice, {
+        ...request,
+        prompt: "Different scenery",
+      }),
+    /already being/,
+  );
   const theme = {
     ...presetThemes[0],
     id: "generated-theme",
-    wallpaperPath: `${f.circleId}/${(reserved.data as Result).id}.webp`,
+    wallpaperPath: `${f.circleId}/${(reserved.data as { requestId: string }).requestId}.webp`,
     source: "ai" as const,
   };
   const apply = {

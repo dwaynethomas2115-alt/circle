@@ -350,7 +350,12 @@ export class Repository {
       );
     if (request.kind === "finishUpload" || request.kind === "cancelUpload")
       await get("uploads", request.fileId);
-    if (request.kind === "generateTheme" || request.kind === "themeWallpaper") {
+    if (
+      request.kind === "prepareTheme" ||
+      request.kind === "generateTheme" ||
+      request.kind === "themeResult" ||
+      request.kind === "themeWallpaper"
+    ) {
       await get("ai_quotas", identity.$id);
       await get("ai_proposals", identity.$id);
     }

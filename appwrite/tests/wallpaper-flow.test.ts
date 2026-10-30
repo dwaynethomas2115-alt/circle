@@ -4,7 +4,12 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import main, { type Context, type Dependencies } from "../function/index";
 import { AIError, type GeneratedWallpaper } from "../function/ai";
-import { execute, type Identity, type ThemeQuota } from "../function/domain";
+import {
+  execute,
+  type Identity,
+  type ThemeQuota,
+  type ThemeJobResult,
+} from "../function/domain";
 import { Repository, type Request } from "../function/repository";
 import { record, rowId } from "../function/records";
 import type { WallpaperServices } from "../function/wallpaper";
@@ -12,6 +17,11 @@ import { FakeDatabase } from "./fake-database";
 import { presetThemes } from "../../src/features/themes";
 import type { CircleTheme } from "../../src/features/types";
 import type { Result } from "../../src/types";
+import {
+  runCircleExecution,
+  type CircleExecution,
+} from "../../src/lib/appwriteExecution";
+import { ThemeGenerationError } from "../../src/features/theme-errors";
 process.env.APPWRITE_FUNCTION_API_ENDPOINT = "https://appwrite.example.test/v1";
 process.env.APPWRITE_FUNCTION_PROJECT_ID = "test-project";
 process.env.CIRCLE_DATABASE_ID = "circle";
@@ -136,7 +146,7 @@ async function setup() {
   let providerCalls = 0;
   let provider: Dependencies["generateWallpaper"] = async () =>
     generated(`generated-${providerCalls}`);
-  const run = async <T = unknown>(
+  const raw = async <T = unknown>(
     who: Identity,
     body: unknown,
   ): Promise<Reply<T>> => {
@@ -160,6 +170,26 @@ async function setup() {
         return provider!(...args);
       },
     })) as Reply<T>;
+  };
+  // Existing behavior checks use the same prepare/claim protocol as the client.
+  const run = async <T = unknown>(
+    who: Identity,
+    body: unknown,
+  ): Promise<Reply<T>> => {
+    const input = body as {
+      kind?: string;
+      requestId?: string;
+      circleId?: string;
+      prompt?: string;
+    };
+    if (input.kind !== "generateTheme" || input.requestId)
+      return raw<T>(who, body);
+    const prepared = await raw<{ requestId: string }>(who, {
+      ...input,
+      kind: "prepareTheme",
+    });
+    if (prepared.status !== 200) return prepared as unknown as Reply<T>;
+    return raw<T>(who, { ...input, requestId: prepared.body.data!.requestId });
   };
   const join = async (who: Identity, asAdmin = false) => {
     const invitation = await mutate(alice, {
@@ -197,6 +227,7 @@ async function setup() {
     tokenCalls,
     wallpaper,
     run,
+    raw,
     join,
     quota,
     setQuota,
@@ -330,7 +361,10 @@ test("a pending generation prevents concurrent paid calls and finishes normally"
   };
   const first = h.run(alice, request(h.circleId));
   await entered;
-  const second = await h.run(alice, request(h.circleId));
+  const second = await h.run(alice, {
+    ...request(h.circleId),
+    prompt: "A different garden",
+  });
   assert.equal(second.status, 429);
   assert.equal(second.body.code, "theme_in_progress");
   assert.equal(h.providerCalls, 1);
@@ -445,6 +479,57 @@ test("unknown completion status keeps a possibly committed private wallpaper and
   assert.equal(h.stored.size, 1);
   assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
   assert.equal(h.quota().successes.length, 1);
+  h.db.getRow = get;
+  const recovered = await h.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: h.circleId,
+    requestId: h.quota().job!.requestId,
+  });
+  assert.equal(recovered.body.data?.status, "completed");
+  assert.equal(h.providerCalls, 1);
+});
+
+test("an uncertain uncommitted completion saves its warning without deleting the private image or releasing its hold", async () => {
+  const h = await setup();
+  const commit = h.db.updateTransaction.bind(h.db);
+  h.db.updateTransaction = async (args) => {
+    const proposalCommit =
+      args.commit &&
+      [...h.db.transactions.get(args.transactionId)!.writes.keys()].some(
+        (key) => key.startsWith("ai_proposals/"),
+      );
+    if (proposalCommit)
+      throw new Error("Could not confirm wallpaper completion commit");
+    return commit(args);
+  };
+  const response = await h.run(alice, request(h.circleId));
+  assert.equal(response.body.code, "theme_completion_unconfirmed");
+  assert.equal(h.providerCalls, 1);
+  assert.equal(h.stored.size, 1);
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+  const quota = h.quota();
+  assert.equal(quota.successes.length, 0);
+  assert.equal(quota.pending?.id, quota.job?.requestId);
+  const status = await h.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: h.circleId,
+    requestId: quota.job!.requestId,
+  });
+  assert.equal(status.body.data?.status, "failed");
+  assert.equal(
+    (status.body.data as { code: string }).code,
+    "theme_completion_unconfirmed",
+  );
+  assert.match(
+    (status.body.data as { error: string }).error,
+    /may already count/,
+  );
+  const retry = await h.raw(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+  });
+  assert.equal(retry.body.code, "theme_in_progress");
+  assert.equal(h.providerCalls, 1);
 });
 
 test("definite storage failure and revoked manager access clean the uncommitted wallpaper and release its daily hold", async () => {
@@ -490,4 +575,296 @@ test("wallpaper signing refuses a changed public ACL and never returns a token f
   assert.equal(response.status, 503);
   assert.equal(response.body.code, "wallpaper_unavailable");
   assert.equal(h.tokenCalls.length, 0);
+});
+
+test("preparing is free, resumes a lost identical reservation, and rejects legacy or mismatched workers before AI", async () => {
+  const h = await setup();
+  const input = { ...request(h.circleId), kind: "prepareTheme" };
+  const first = await h.raw<{ requestId: string }>(alice, input);
+  assert.equal(first.status, 200);
+  const requestId = first.body.data!.requestId;
+  assert.match(requestId, /^[a-f0-9-]{36}$/);
+  assert.deepEqual((await h.raw(alice, input)).body.data, { requestId });
+  assert.equal(h.quota().attempts.length, 1);
+  assert.equal(h.providerCalls, 0);
+  assert.equal(
+    (await h.raw(alice, request(h.circleId))).body.code,
+    "theme_client_update_required",
+  );
+  const mismatched = await h.raw(alice, {
+    ...request(h.circleId),
+    requestId,
+    prompt: "Different prompt",
+  });
+  assert.equal(mismatched.body.code, "theme_request_unavailable");
+  assert.equal(h.providerCalls, 0);
+  const pending = await h.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: h.circleId,
+    requestId,
+  });
+  assert.deepEqual(pending.body.data, { status: "pending" });
+});
+
+test("a prepared job can be claimed only once and its result stays private to the current requesting manager", async () => {
+  const h = await setup();
+  await h.join(bob);
+  await h.join(admin, true);
+  const prepared = await h.raw<{ requestId: string }>(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+  });
+  const requestId = prepared.body.data!.requestId;
+  const worker = { ...request(h.circleId), requestId };
+  let started!: () => void, release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  h.provider = async () => {
+    started();
+    await waiting;
+    return generated();
+  };
+  const first = h.raw(alice, worker);
+  await entered;
+  assert.equal((await h.raw(alice, worker)).status, 200);
+  assert.equal(h.providerCalls, 1);
+  const status = { kind: "themeResult", circleId: h.circleId, requestId };
+  assert.deepEqual((await h.raw(alice, status)).body.data, {
+    status: "pending",
+  });
+  for (const who of [bob, admin, eve]) {
+    const denied = await h.raw(who, status);
+    assert.notEqual(denied.status, 200);
+    assert.equal(denied.body.data, undefined);
+  }
+  release();
+  assert.equal((await first).status, 200);
+  const result = await h.raw<ThemeJobResult>(alice, status);
+  assert.equal(result.body.data?.status, "completed");
+  assert.equal((await h.raw(alice, worker)).status, 200);
+  assert.equal(h.providerCalls, 1);
+  assert.equal(h.quota().successes.length, 1);
+  const memberKey = `members/${rowId(`${h.circleId}:${alice.$id}`)}`;
+  const membership = h.db.rows.get(memberKey)!;
+  h.db.seed("members", membership.$id, {
+    ...membership,
+    data: JSON.stringify({ ...JSON.parse(membership.data), role: "member" }),
+  });
+  assert.notEqual((await h.raw(alice, status)).status, 200);
+});
+
+test("saved failures preserve safe provider retry metadata and superseded results cannot dispatch again", async () => {
+  const h = await setup();
+  h.provider = async () => {
+    throw new AIError("Provider is busy", 429, "provider_rate_limit", 37);
+  };
+  const prepared = await h.raw<{ requestId: string }>(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+  });
+  const requestId = prepared.body.data!.requestId;
+  const worker = { ...request(h.circleId), requestId };
+  assert.equal((await h.raw(alice, worker)).status, 429);
+  const result = await h.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: h.circleId,
+    requestId,
+  });
+  assert.deepEqual(result.body.data, {
+    status: "failed",
+    error: "Provider is busy",
+    code: "provider_rate_limit",
+    responseStatus: 429,
+    retryAfterSeconds: 37,
+  });
+  assert.equal(h.quota().pending, undefined);
+  assert.equal(h.quota().successes.length, 0);
+  assert.equal((await h.raw(alice, worker)).status, 200);
+  assert.equal(h.providerCalls, 1);
+  await h.raw(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+    prompt: "New scenery",
+  });
+  assert.equal(
+    (
+      await h.raw(alice, {
+        kind: "themeResult",
+        circleId: h.circleId,
+        requestId,
+      })
+    ).body.code,
+    "theme_request_unavailable",
+  );
+  assert.equal(
+    (await h.raw(alice, worker)).body.code,
+    "theme_request_unavailable",
+  );
+  assert.equal(h.providerCalls, 1);
+});
+
+test("missing provider configuration and malformed requests fail during free preflight", async () => {
+  const h = await setup();
+  const saved = process.env.OPENAI_API_KEY;
+  try {
+    delete process.env.OPENAI_API_KEY;
+    const response = await h.raw(alice, {
+      ...request(h.circleId),
+      kind: "prepareTheme",
+    });
+    assert.equal(response.status, 503);
+    assert.equal(response.body.code, "provider_configuration");
+    assert.equal(h.providerCalls, 0);
+    assert.equal(h.db.rows.has(`ai_quotas/${rowId(alice.$id)}`), false);
+  } finally {
+    if (saved === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = saved;
+  }
+  const invalid = await h.raw(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+    prompt: "x",
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal(h.providerCalls, 0);
+});
+
+test("actual client retrieves handler results and failures when every async execution body is empty", async () => {
+  for (const fail of [false, true]) {
+    const h = await setup();
+    if (fail)
+      h.provider = async () => {
+        throw new AIError(
+          "Provider billing needs attention",
+          503,
+          "provider_billing",
+        );
+      };
+    let dispatches = 0;
+    let execution: CircleExecution = {
+      $id: "async-worker",
+      status: "waiting",
+      responseBody: "",
+      responseStatusCode: 0,
+    };
+    let worker: Promise<void> | undefined;
+    const calls: string[] = [];
+    const service = {
+      createExecution: async (input: { body: string; async: boolean }) => {
+        const body = JSON.parse(input.body);
+        calls.push(body.kind);
+        if (input.async) {
+          dispatches++;
+          worker = h.raw(alice, body).then((result) => {
+            execution = {
+              ...execution,
+              status: "completed",
+              responseStatusCode: result.status,
+              responseBody: "",
+            };
+          });
+          return execution;
+        }
+        const response = await h.raw(alice, body);
+        return {
+          $id: `sync-${calls.length}`,
+          status: "completed",
+          responseStatusCode: response.status,
+          responseBody: JSON.stringify(response.body),
+        };
+      },
+      getExecution: async () => execution,
+    };
+    const promise = runCircleExecution<CircleTheme>(service, {
+      functionId: "circle-api",
+      body: request(h.circleId),
+      themeJobKey: `actual-handler-empty-body-${fail}`,
+      pause: async () => {
+        await worker;
+      },
+    });
+    if (fail)
+      await assert.rejects(
+        promise,
+        (cause: unknown) =>
+          cause instanceof ThemeGenerationError &&
+          cause.code === "provider_billing" &&
+          /billing/.test(cause.message),
+      );
+    else {
+      const theme = await promise;
+      assert.ok(theme.wallpaperPath?.startsWith(`${h.circleId}/`));
+    }
+    assert.equal(execution.status, "completed");
+    assert.equal(execution.responseBody, "");
+    assert.equal(h.providerCalls, 1);
+    assert.equal(dispatches, 1);
+    assert.equal(calls[0], "prepareTheme");
+    assert.ok(calls.includes("themeResult"));
+  }
+});
+
+test("expired prepared jobs cannot execute paid work and uncertain claim commits never start it twice", async () => {
+  const expired = await setup();
+  const prepared = await expired.raw<{ requestId: string }>(alice, {
+    ...request(expired.circleId),
+    kind: "prepareTheme",
+  });
+  const requestId = prepared.body.data!.requestId;
+  const quota = expired.quota();
+  quota.pending!.startedAt = Date.now() - 600_001;
+  expired.setQuota(quota);
+  const result = await expired.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: expired.circleId,
+    requestId,
+  });
+  assert.equal(result.body.data?.status, "failed");
+  assert.equal(
+    (result.body.data as { code: string }).code,
+    "theme_request_expired",
+  );
+  assert.equal(
+    (await expired.raw(alice, { ...request(expired.circleId), requestId })).body
+      .code,
+    "theme_request_unavailable",
+  );
+  assert.equal(expired.providerCalls, 0);
+
+  const uncertain = await setup();
+  const pending = await uncertain.raw<{ requestId: string }>(alice, {
+    ...request(uncertain.circleId),
+    kind: "prepareTheme",
+  });
+  const worker = {
+    ...request(uncertain.circleId),
+    requestId: pending.body.data!.requestId,
+  };
+  const commit = uncertain.db.updateTransaction.bind(uncertain.db);
+  let lose = true;
+  uncertain.db.updateTransaction = async (args) => {
+    const claim =
+      args.commit &&
+      [
+        ...uncertain.db.transactions.get(args.transactionId)!.writes.values(),
+      ].some(
+        (value) =>
+          value?.actor_id === alice.$id &&
+          JSON.parse(value.data).job?.status === "processing",
+      );
+    const result = await commit(args);
+    if (claim && lose) {
+      lose = false;
+      throw new Error("Lost confirmation of claim commit");
+    }
+    return result;
+  };
+  assert.notEqual((await uncertain.raw(alice, worker)).status, 200);
+  assert.equal(uncertain.quota().job?.status, "processing");
+  assert.equal((await uncertain.raw(alice, worker)).status, 200);
+  assert.equal(uncertain.providerCalls, 0);
 });
