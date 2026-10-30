@@ -13,3 +13,4 @@ test-results/
 
 expo-env.d.ts
 # @end expo-cli
+appwrite/function/dist/

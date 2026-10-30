@@ -20,7 +20,7 @@ import {
   type RemoteAudioTrack,
 } from "livekit-client";
 import { useCircle } from "../../state/CircleProvider";
-import { supabase } from "../../lib/supabase";
+import { invokeCircle } from "../../lib/appwrite";
 import { Banner, Button, IconButton, T } from "../../ui/primitives";
 import { font } from "../../ui/theme";
 import type { CircleRoomProps } from "./types";
@@ -208,28 +208,11 @@ export function CircleRoom({ circleId, circleName, onClose }: CircleRoomProps) {
 
   const endpoint = useCallback(
     async (action: "join" | "status") => {
-      if (!supabase)
-        throw new Error("Live rooms need a connected Supabase project.");
-      const result = await supabase.functions.invoke("circle-room", {
-        body: { action, circle_id: circleId },
-      });
-      if (result.error) {
-        let message =
-          "Live rooms could not connect. Ask your Circle administrator to check the room service.";
-        try {
-          const context = result.error.context as Response;
-          const body = await context.json();
-          if (body.error) message = body.error;
-        } catch {
-          /* Transport errors may have no JSON response. */
-        }
-        throw new Error(message);
-      }
-      return result.data as {
+      return invokeCircle<{
         token?: string;
         url?: string;
         authorized?: boolean;
-      };
+      }>({ kind: "room", circleId, action });
     },
     [circleId],
   );

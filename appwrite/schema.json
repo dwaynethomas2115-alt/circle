@@ -1,0 +1,1334 @@
+{
+  "schemaVersion": 2,
+  "databaseId": "circle",
+  "unusedExistingTables": ["circle_state"],
+  "initialRows": [],
+  "tables": [
+    {
+      "id": "profiles",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "entity",
+          "columns": ["entity_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        },
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "circles",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "related_time",
+          "columns": ["related_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        },
+        {
+          "key": "entity",
+          "columns": ["entity_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "members",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope",
+          "columns": ["scope_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        },
+        {
+          "key": "actor",
+          "columns": ["actor_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "join_requests",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope_time",
+          "columns": ["scope_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        },
+        {
+          "key": "actor_time",
+          "columns": ["actor_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "invitations",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope",
+          "columns": ["scope_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        },
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "posts",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope_time",
+          "columns": ["scope_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "reactions",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "comments",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "messages",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope_time",
+          "columns": ["scope_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "notifications",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "actor_related_time",
+          "columns": ["actor_id", "related_id", "sort_at"],
+          "orders": ["ASC", "ASC", "DESC"],
+          "type": "key"
+        },
+        {
+          "key": "scope",
+          "columns": ["scope_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        },
+        {
+          "key": "actor_time",
+          "columns": ["actor_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "blocks",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "actor",
+          "columns": ["actor_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        },
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "reports",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope_time",
+          "columns": ["scope_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "polls",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope_time",
+          "columns": ["scope_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "poll_options",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "votes",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope_time",
+          "columns": ["scope_id", "sort_at"],
+          "orders": ["ASC", "DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "rsvps",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "themes",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "scope",
+          "columns": ["scope_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "read_states",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "actor",
+          "columns": ["actor_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "uploads",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "actor_related_time",
+          "columns": ["actor_id", "related_id", "sort_at"],
+          "orders": ["ASC", "ASC", "DESC"],
+          "type": "key"
+        },
+        {
+          "key": "time",
+          "columns": ["sort_at"],
+          "orders": ["DESC"],
+          "type": "key"
+        }
+      ]
+    },
+    {
+      "id": "ai_quotas",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "id": "ai_proposals",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "id": "guards",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "id": "usernames",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "id": "media_refs",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": [
+        {
+          "key": "related",
+          "columns": ["related_id"],
+          "orders": ["ASC"],
+          "type": "key"
+        }
+      ]
+    }
+  ],
+  "bucket": {
+    "id": "circle-media",
+    "fileSecurity": true,
+    "permissions": ["create(\"users\")"],
+    "maximumFileSize": 50000000,
+    "allowedFileExtensions": ["jpg", "mp4", "mov"]
+  },
+  "function": {
+    "id": "circle-api",
+    "runtime": "node-22",
+    "entrypoint": "dist/main.js",
+    "commands": "npm ci --omit=dev",
+    "execute": ["users"],
+    "scopes": [
+      "rows.read",
+      "rows.write",
+      "files.read",
+      "files.write",
+      "tokens.write"
+    ],
+    "timeout": 60,
+    "variables": {
+      "CIRCLE_DATABASE_ID": "circle"
+    }
+  }
+}

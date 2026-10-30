@@ -49,3 +49,12 @@ test("media frame and duration handle portrait, panorama and short videos", () =
   assert.equal(formatDuration(59001), "1:00");
   assert.equal(formatDuration(11500), "0:12");
 });
+
+test("client accepts the decimal 50MB boundary and rejects one byte above", () => {
+  assert.equal(MEDIA_MAX_BYTES, 50_000_000);
+  assert.equal(validateMedia({ type: "image", bytes: 50_000_000 }), null);
+  assert.match(
+    validateMedia({ type: "image", bytes: 50_000_001 }) || "",
+    /50 MB/,
+  );
+});

@@ -1,5 +1,5 @@
 /** Shared limits for the picker, previews, and private-media uploads. */
-export const MEDIA_MAX_BYTES = 50 * 1024 * 1024;
+export const MEDIA_MAX_BYTES = 50_000_000;
 export const VIDEO_MAX_DURATION_MS = 60_000;
 export const PHOTO_MAX_EDGE = 2560;
 export const PHOTO_JPEG_QUALITY = 0.9;

@@ -130,7 +130,7 @@ export default function Auth() {
           autoCorrect={false}
           autoComplete="email"
         />
-        {mode === "supabase" && (
+        {mode === "appwrite" && (
           <Field
             label="Password"
             value={password}
@@ -173,7 +173,7 @@ export default function Auth() {
             busy ||
             !email ||
             (signup && (!name || !username || !adult)) ||
-            (mode === "supabase" && password.length < (signup ? 8 : 1))
+            (mode === "appwrite" && password.length < (signup ? 8 : 1))
           }
           style={{ minHeight: 49 }}
         >

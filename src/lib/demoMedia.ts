@@ -84,7 +84,7 @@ export async function persistDemoMedia(
         "The selected file is no longer available. Please choose it again.",
       );
     const blob = await response.blob();
-    if (blob.size > 50 * 1024 * 1024)
+    if (blob.size > 50_000_000)
       throw new Error("Please choose demo media smaller than 50 MB.");
     try {
       await operation("readwrite", (store) => store.put(blob, key));
