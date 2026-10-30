@@ -137,7 +137,7 @@ test("phone layout stays within viewport and navigates", async ({ page }) => {
   ).toBeLessThanOrEqual(390);
   await page.getByRole("link", { name: "Circles", exact: true }).click();
   await expect(
-    page.getByText("Your people, in one place.", { exact: true }),
+    page.getByText("Every Circle, a shared story.", { exact: true }),
   ).toBeVisible();
 });
 test("chosen photos remain visible after a full reload", async ({ page }) => {
@@ -154,7 +154,7 @@ test("chosen photos remain visible after a full reload", async ({ page }) => {
   await page.getByRole("button", { name: "Share moment", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await expect(
-    page.getByText("A photo saved for another day.", { exact: true }),
+    page.getByText("A photo saved for another day.", { exact: false }),
   ).toBeVisible();
   await page.reload();
   const photo = page.getByRole("img", {

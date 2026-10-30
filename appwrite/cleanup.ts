@@ -3,13 +3,16 @@ import { Client, TablesDB, Storage, Query } from "node-appwrite";
 import { Repository } from "./function/repository";
 import { parse, record } from "./function/records";
 import type { Store } from "./function/domain";
+import { getPostMedia } from "../src/lib/postMedia";
 // Pure helper retained for domain/security tests; live cleanup uses indexed media_refs below.
 export function unreferencedUploads(store: Store, before: number): string[] {
   const refs = new Set(
     [
       ...store.app.users.map((u) => u.avatar),
       ...store.app.circles.flatMap((c) => [c.avatar, c.cover]),
-      ...store.app.posts.map((p) => p.media),
+      ...store.app.posts.flatMap((p) =>
+        getPostMedia(p).map((item) => item.uri),
+      ),
     ]
       .filter((s): s is string => Boolean(s?.startsWith("awfile:")))
       .map((s) => s.slice(7)),

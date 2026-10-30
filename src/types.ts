@@ -50,9 +50,20 @@ export interface Post {
   content: string;
   media?: string;
   mediaType?: "image" | "video";
+  attachments?: PostAttachment[];
   createdAt: string;
   reactions: string[];
   tag?: string;
+}
+export interface PostAttachment {
+  uri: string;
+  type: "image" | "video";
+  width?: number;
+  height?: number;
+}
+export interface PostAttachmentInput extends PostAttachment {
+  durationMs?: number;
+  mimeType?: string;
 }
 export interface Comment {
   id: string;
@@ -127,6 +138,12 @@ export interface CreatePostInput {
   mediaType?: "image" | "video";
   mediaDurationMs?: number;
   mediaMimeType?: string;
-  onUploadProgress?: (progress: { uploaded: number; total: number }) => void;
+  attachments?: PostAttachmentInput[];
+  onUploadProgress?: (progress: {
+    uploaded: number;
+    total: number;
+    itemIndex?: number;
+    itemCount?: number;
+  }) => void;
   uploadSignal?: AbortSignal;
 }

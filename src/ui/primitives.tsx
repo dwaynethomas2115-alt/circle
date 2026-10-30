@@ -190,7 +190,7 @@ export function Field({
       {label && <T style={{ fontFamily: font.bold, fontSize: 12 }}>{label}</T>}
       <TextInput
         accessibilityLabel={props.accessibilityLabel || label}
-        placeholderTextColor="#98A39E"
+        placeholderTextColor="#7B877F"
         {...props}
         style={[
           s.field,
@@ -321,8 +321,8 @@ const s = StyleSheet.create({
     justifyContent: "center",
   },
   button: {
-    minHeight: 42,
-    borderRadius: 11,
+    minHeight: 44,
+    borderRadius: 12,
     backgroundColor: c.teal,
     paddingHorizontal: 18,
     flexDirection: "row",
@@ -332,7 +332,7 @@ const s = StyleSheet.create({
   },
   card: {
     backgroundColor: "white",
-    borderRadius: 18,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: c.line,
     overflow: "hidden",

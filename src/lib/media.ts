@@ -14,6 +14,8 @@ export function mediaMaxBytes(type: "image" | "video") {
 export interface UploadProgress {
   uploaded: number;
   total: number;
+  itemIndex?: number;
+  itemCount?: number;
 }
 export interface MediaUploadOptions {
   mimeType?: string;

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft,
@@ -23,15 +23,16 @@ import {
 } from "../../src/ui/primitives";
 import { colors as c, font } from "../../src/ui/theme";
 import type { Comment } from "../../src/types";
+
 export default function PostDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { state, feed, user, actions } = useCircle();
   const router = useRouter();
-  const post = feed.find((p) => p.id === id);
-  const [text, setText] = useState(""),
-    [reply, setReply] = useState<Comment | null>(null),
-    [notice, setNotice] = useState(""),
-    [busy, setBusy] = useState(false);
+  const post = feed.find((item) => item.id === id);
+  const [text, setText] = useState("");
+  const [reply, setReply] = useState<Comment | null>(null);
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
   if (!post)
     return (
       <Empty
@@ -42,184 +43,178 @@ export default function PostDetail() {
       </Empty>
     );
   const comments = state.comments.filter(
-    (x) =>
-      x.postId === id &&
+    (comment) =>
+      comment.postId === id &&
       !state.blocks.some(
-        (b) => b.userId === user?.id && b.blockedId === x.authorId,
+        (block) =>
+          block.userId === user?.id && block.blockedId === comment.authorId,
       ),
   );
   async function send() {
+    if (busy || !text.trim()) return;
     setBusy(true);
-    const r = await actions.addComment(id, text, reply?.id);
-    if (r.ok) {
-      setText("");
-      setReply(null);
-    } else setNotice(r.error || "Could not send comment.");
-    setBusy(false);
+    try {
+      const result = await actions.addComment(id, text, reply?.id);
+      if (result.ok) {
+        setText("");
+        setReply(null);
+      } else setNotice(result.error || "Could not send comment.");
+    } catch {
+      setNotice("Could not send your comment. Your draft is still here.");
+    } finally {
+      setBusy(false);
+    }
   }
   function renderComment(comment: Comment, depth = 0): React.ReactNode {
-    const author = state.users.find((u) => u.id === comment.authorId);
+    const author = state.users.find((person) => person.id === comment.authorId);
+    const children = comments.filter((child) => child.parentId === comment.id);
     return (
       <View
         key={comment.id}
-        style={{ marginLeft: depth ? 22 : 0, marginBottom: 20 }}
+        style={[s.thread, depth > 0 && depth <= 3 && s.nestedThread]}
       >
-        <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={s.comment}>
           <Avatar
-            name={author?.name || "Member"}
+            name={author?.name || "Circle member"}
             uri={author?.avatar}
-            size={32}
+            size={depth > 0 ? 28 : 34}
           />
-          <View style={{ flex: 1 }}>
-            <View
-              style={{
-                backgroundColor: "#F4F7F2",
-                borderRadius: 12,
-                padding: 13,
-              }}
-            >
-              <T
-                style={{ fontFamily: font.bold, fontSize: 12, marginBottom: 6 }}
-              >
-                {author?.name || "Circle member"}
-              </T>
-              <T style={{ fontSize: 13, lineHeight: 21, color: "#637369" }}>
-                {comment.content}
-              </T>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={s.commentHeading}>
+              <T style={s.commentAuthor}>{author?.name || "Circle member"}</T>
+              <T style={s.commentTime}>{timeAgo(comment.createdAt)}</T>
             </View>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 14,
-                paddingTop: 7,
-                paddingLeft: 5,
-              }}
-            >
-              <T style={{ fontSize: 10, color: c.muted }}>
-                {timeAgo(comment.createdAt)}
-              </T>
-              <Pressable onPress={() => setReply(comment)}>
-                <T
-                  style={{ fontSize: 10, color: c.teal, fontFamily: font.bold }}
-                >
-                  Reply
-                </T>
+            <T style={s.commentText}>{comment.content}</T>
+            <View style={s.commentActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setReply(comment)}
+                hitSlop={7}
+                style={s.replyAction}
+              >
+                <CornerDownRight size={12} color={c.teal} />
+                <T style={s.replyText}>Reply</T>
               </Pressable>
               {comment.authorId === user?.id ? (
                 <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel="Delete comment"
+                  hitSlop={8}
                   onPress={async () => {
-                    const r = await actions.deleteComment(comment.id);
-                    if (!r.ok) setNotice(r.error || "Could not delete.");
+                    const result = await actions.deleteComment(comment.id);
+                    if (!result.ok)
+                      setNotice(result.error || "Could not delete.");
                   }}
                 >
-                  <Trash2 size={11} color={c.muted} />
+                  <Trash2 size={12} color={c.muted} />
                 </Pressable>
               ) : (
                 <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel="Report comment"
+                  hitSlop={8}
                   onPress={async () => {
-                    const r = await actions.report(
+                    const result = await actions.report(
                       "comment",
                       comment.id,
                       "Member requested moderator review.",
                     );
                     setNotice(
-                      r.ok
+                      result.ok
                         ? "Comment reported for review."
-                        : r.error || "Could not report.",
+                        : result.error || "Could not report.",
                     );
                   }}
                 >
-                  <Flag size={11} color={c.muted} />
+                  <Flag size={12} color={c.muted} />
                 </Pressable>
               )}
             </View>
           </View>
         </View>
-        <View style={{ marginTop: 12 }}>
-          {comments
-            .filter((x) => x.parentId === comment.id)
-            .map((x) => renderComment(x, depth + 1))}
-        </View>
+        {children.length > 0 && (
+          <View style={s.replies}>
+            {children.map((child) => renderComment(child, depth + 1))}
+          </View>
+        )}
       </View>
     );
   }
   return (
-    <View style={{ width: "100%", maxWidth: 730, alignSelf: "center" }}>
+    <View style={s.page}>
       <Pressable
+        accessibilityRole="button"
         onPress={() => router.push("/")}
-        style={{
-          flexDirection: "row",
-          gap: 8,
-          alignItems: "center",
-          marginBottom: 24,
-        }}
+        style={s.back}
       >
         <ArrowLeft size={16} color={c.teal} />
-        <T style={{ color: c.teal, fontSize: 12 }}>Back to your feed</T>
+        <T style={s.backText}>Back to your scrapbook</T>
       </Pressable>
       <PostCard post={post} detail />
       {!!notice && <Banner text={notice} onDismiss={() => setNotice("")} />}
-      <Card style={{ padding: 22 }}>
-        <T style={{ fontFamily: font.heading, fontSize: 19, marginBottom: 23 }}>
-          A little conversation{" "}
-          <T style={{ fontSize: 13, color: c.muted }}>({comments.length})</T>
-        </T>
-        {comments.filter((x) => !x.parentId).map((x) => renderComment(x))}
+      <Card style={s.conversation}>
+        <View style={s.sectionHeading}>
+          <View style={{ flex: 1 }}>
+            <T style={s.eyebrow}>THE WORDS WE ADD</T>
+            <T style={s.title}>The conversation</T>
+          </View>
+          <View style={s.commentBadge}>
+            <T style={s.badgeText}>{comments.length}</T>
+          </View>
+        </View>
+        {comments
+          .filter(
+            (comment) =>
+              !comment.parentId ||
+              !comments.some((parent) => parent.id === comment.parentId),
+          )
+          .map((comment) => renderComment(comment))}
         {comments.length === 0 && (
-          <T style={{ color: c.muted, marginBottom: 25, lineHeight: 22 }}>
-            Be the first to leave a little love.
+          <T style={s.emptyText}>
+            What do you remember about this moment? Start the conversation.
           </T>
         )}
-        {reply && (
+        <View style={s.composer}>
+          {reply && (
+            <View style={s.replying}>
+              <CornerDownRight size={14} color={c.teal} />
+              <T style={s.replyingText}>
+                Replying to{" "}
+                {state.users.find((person) => person.id === reply.authorId)
+                  ?.name || "Circle member"}
+              </T>
+              <IconButton
+                icon={X}
+                label="Cancel reply"
+                onPress={() => setReply(null)}
+                size={14}
+              />
+            </View>
+          )}
           <View
-            style={{
-              backgroundColor: c.mint,
-              padding: 10,
-              borderRadius: 10,
-              marginBottom: 10,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-            }}
+            style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}
           >
-            <CornerDownRight size={14} color={c.teal} />
-            <T style={{ color: c.teal, fontSize: 11, flex: 1 }}>
-              Replying to{" "}
-              {state.users.find((x) => x.id === reply.authorId)?.name}
-            </T>
-            <IconButton
-              icon={X}
-              label="Cancel reply"
-              onPress={() => setReply(null)}
-              size={14}
-            />
-          </View>
-        )}
-        <View
-          style={{ flexDirection: "row", gap: 10, alignItems: "flex-start" }}
-        >
-          <Avatar name={user?.name || "You"} uri={user?.avatar} size={34} />
-          <View style={{ flex: 1 }}>
-            <Field
-              placeholder="Leave a little love…"
-              accessibilityLabel="Comment"
-              value={text}
-              onChangeText={setText}
-              multiline
-              maxLength={2000}
-              style={{ minHeight: 75 }}
-            />
-            <View style={{ alignItems: "flex-end" }}>
-              <Button
-                icon={Send}
-                disabled={!text.trim() || busy}
-                onPress={send}
-              >
-                {busy ? "Sending…" : "Send comment"}
-              </Button>
+            <Avatar name={user?.name || "You"} uri={user?.avatar} size={34} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Field
+                placeholder="Add to the conversation…"
+                accessibilityLabel="Comment"
+                value={text}
+                onChangeText={setText}
+                editable={!busy}
+                multiline
+                maxLength={2000}
+                style={s.input}
+              />
+              <View style={{ alignItems: "flex-end" }}>
+                <Button
+                  icon={Send}
+                  disabled={!text.trim() || busy}
+                  onPress={send}
+                >
+                  {busy ? "Sending…" : "Send comment"}
+                </Button>
+              </View>
             </View>
           </View>
         </View>
@@ -227,3 +222,103 @@ export default function PostDetail() {
     </View>
   );
 }
+const s = StyleSheet.create({
+  page: { width: "100%", maxWidth: 730, alignSelf: "center" },
+  back: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    marginBottom: 23,
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+  },
+  backText: { color: c.teal, fontSize: 12, fontFamily: font.medium },
+  conversation: {
+    padding: 22,
+    borderRadius: 18,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  sectionHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 28,
+  },
+  eyebrow: {
+    fontSize: 9,
+    fontFamily: font.bold,
+    letterSpacing: 1.3,
+    color: "#7A8978",
+    marginBottom: 8,
+  },
+  title: { fontFamily: font.heading, fontSize: 22, letterSpacing: -0.6 },
+  commentBadge: {
+    minWidth: 33,
+    height: 33,
+    borderRadius: 18,
+    backgroundColor: "#EEF3E9",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 9,
+  },
+  badgeText: { color: c.teal, fontFamily: font.bold, fontSize: 12 },
+  thread: { marginBottom: 19 },
+  nestedThread: {
+    marginLeft: 15,
+    borderLeftWidth: 1,
+    borderLeftColor: c.line,
+    paddingLeft: 13,
+  },
+  comment: { flexDirection: "row", gap: 11 },
+  commentHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    columnGap: 8,
+    rowGap: 3,
+    marginTop: 1,
+    marginBottom: 5,
+  },
+  commentAuthor: { fontFamily: font.bold, fontSize: 12 },
+  commentTime: { fontSize: 10, color: c.muted },
+  commentText: { fontSize: 14, lineHeight: 22, color: "#4D6053" },
+  commentActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 18,
+    marginTop: 10,
+  },
+  replyAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    minHeight: 20,
+  },
+  replyText: { fontFamily: font.medium, fontSize: 11, color: c.teal },
+  replies: { marginTop: 18 },
+  emptyText: { color: c.muted, marginBottom: 24, fontSize: 13, lineHeight: 22 },
+  composer: {
+    borderTopWidth: 1,
+    borderTopColor: c.line,
+    paddingTop: 22,
+    marginTop: 4,
+  },
+  replying: {
+    backgroundColor: c.mint,
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  replyingText: { color: c.teal, fontSize: 12, flex: 1 },
+  input: {
+    minHeight: 88,
+    backgroundColor: "#FAFBF8",
+    borderRadius: 12,
+    fontSize: 13,
+    lineHeight: 21,
+  },
+});

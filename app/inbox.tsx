@@ -3,6 +3,7 @@ import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronRight, LockKeyhole } from "lucide-react-native";
 import { useCircle } from "../src/state/CircleProvider";
+import { visibleMessages } from "../src/state/model";
 import { T, Card, Empty, Button, CircleAvatar } from "../src/ui/primitives";
 import { timeAgo } from "../src/ui/PostCard";
 import { colors as c, font } from "../src/ui/theme";
@@ -11,17 +12,22 @@ export default function Inbox() {
   const router = useRouter();
   return (
     <View style={{ maxWidth: 800, width: "100%", alignSelf: "center" }}>
-      <T style={{ fontFamily: font.extra, fontSize: 31, letterSpacing: -1 }}>
-        Keep the conversation going.
+      <T
+        style={{
+          fontFamily: font.editorial,
+          fontSize: 35,
+          lineHeight: 44,
+          letterSpacing: -0.7,
+        }}
+      >
+        The conversation continues.
       </T>
       <T style={{ color: c.muted, marginTop: 9, marginBottom: 27 }}>
-        A little closer, one message at a time.
+        The plans, the little updates, the things only your people get.
       </T>
       <Card>
         {joinedCircles.map((circle, i) => {
-          const messages = state.messages.filter(
-            (m) => m.circleId === circle.id,
-          );
+          const messages = visibleMessages(state, circle.id);
           const last = messages[messages.length - 1];
           const author = state.users.find((u) => u.id === last?.authorId);
           return (
@@ -32,9 +38,9 @@ export default function Inbox() {
                 router.push(`/circle/${circle.id}?tab=chat` as never)
               }
               style={({ pressed }) => ({
-                padding: 23,
+                padding: 21,
                 flexDirection: "row",
-                gap: 15,
+                gap: 13,
                 alignItems: "center",
                 borderTopWidth: i ? 1 : 0,
                 borderColor: c.line,
@@ -53,10 +59,18 @@ export default function Inbox() {
                     justifyContent: "space-between",
                   }}
                 >
-                  <T style={{ fontFamily: font.bold, fontSize: 14 }}>
+                  <T
+                    numberOfLines={1}
+                    style={{
+                      fontFamily: font.bold,
+                      fontSize: 14,
+                      flex: 1,
+                      marginRight: 8,
+                    }}
+                  >
                     {circle.name}
                   </T>
-                  <T style={{ fontSize: 10, color: c.muted }}>
+                  <T style={{ fontSize: 10, color: c.muted, paddingTop: 3 }}>
                     {last ? timeAgo(last.createdAt) : ""}
                   </T>
                 </View>
@@ -89,7 +103,15 @@ export default function Inbox() {
         }}
       >
         <LockKeyhole size={12} color={c.muted} />
-        <T style={{ fontSize: 11, color: c.muted }}>
+        <T
+          style={{
+            fontSize: 11,
+            lineHeight: 18,
+            color: c.muted,
+            flexShrink: 1,
+            textAlign: "center",
+          }}
+        >
           {mode === "demo"
             ? "Local demo conversations. Messages do not reach other people."
             : "Private conversations for approved Circle members."}

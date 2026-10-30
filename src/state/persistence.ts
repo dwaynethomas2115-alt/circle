@@ -30,6 +30,14 @@ export function mapDemoImages(
     posts: state.posts.map((post) => ({
       ...post,
       media: post.media ? map(post.media) : post.media,
+      ...(post.attachments
+        ? {
+            attachments: post.attachments.map((item) => ({
+              ...item,
+              uri: map(item.uri),
+            })),
+          }
+        : {}),
     })),
   };
 }

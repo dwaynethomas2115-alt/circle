@@ -1,6 +1,6 @@
 # Circle
 
-Your people. Your place. A mobile-first private-community app built with **Expo SDK 54, React Native, TypeScript, Expo Router, and Appwrite**. Shared screens run on iOS, Android, and web; the wider web layout adds navigation and a community sidebar.
+Your people. Your shared story. A private digital scrapbook with a group chat, threaded conversations, and memories to revisit, built with **Expo SDK 54, React Native, TypeScript, Expo Router, and Appwrite**. Shared screens run on iOS, Android, and web; the wider web layout adds navigation and a community sidebar.
 
 ## One shared workflow
 
@@ -38,11 +38,12 @@ Offline mode skips Expo's online dependency-version lookup; it does not disable 
 
 ## Screens and local demo features
 
-- Responsive home feed with Circle filtering and text search; private Circle feed and separate chat.
+- Warm paper styling, large mounted photographs, quieter borders, captions below the media, and readable discussion threads. Home has Journal/Photos views, Circle filtering, text search, and chronological sorting.
+- Circle journals have month filters and dated chapters for revisiting loaded memories; compact Circle chat headers put the conversation first.
 - Welcome, adult signup/sign-in, profile editing/photo, logout, and account deletion confirmation.
 - Circle creation with avatar/cover, category, description, discoverability, and approval settings.
 - Joined/discoverable/pending Circles, join requests, approve/reject, private single-use invitation codes, member removal, admin/moderator roles, and leave flow.
-- Text/photo/video posts, heart reactions, threaded comments and replies, author deletion, content reporting, blocking, and moderator report review/removal.
+- Text/photo/video posts and albums of up to ten photos, heart reactions, threaded comments and replies, author deletion, content reporting, blocking, and moderator report review/removal. Album selection supports adding, arranging, removing, and choosing the cover photo; published albums support swiping, page controls, and full-screen navigation.
 - Circle group messages with sender identity, timestamps, deletion, and authorized polling in Appwrite mode.
 - In-app notifications and read controls for invitations, requests, approvals, posts, reactions, and comment/reply activity. Push delivery and direct messages are outside this MVP.
 - Loading, empty, error, unauthorized, and removed-content states; bundled typography and imagery.
@@ -56,7 +57,9 @@ Circle now also includes:
 - **Circle wallpapers:** owners/admins describe everyone's interests in one prompt. The Appwrite Function asks OpenAI to combine them into a colorful illustrated wallpaper with matching readable interface colors. Preview before applying. The image fills the Circle backdrop and a prominent hero area; Home retains its usual style. Local demo does not generate AI images, and older saved palettes remain readable.
 - **Circle room:** accessed through the header’s **Join room** button; drop-in group voice/video on the web uses LiveKit. Microphone and camera start off; local demo offers only a self-preview, with no remote users or simulated presence. Appwrite live calls are not ported yet; joining returns an explicit error. Native currently opens the same Circle in a configured browser app; native in-app WebRTC calling has not been implemented.
 
-The default appearance is light. Dark mode, push notifications, albums, subscriptions, direct messaging, and child accounts remain outside this version.
+The default appearance is light. Dark mode, push notifications, subscriptions, direct messaging, and child accounts remain outside this version. Month browsing covers the currently loaded recent history; the app does not yet load all older server rows.
+
+The [scrapbook update deployment notes](docs/SCRAPBOOK_UPDATE.md) cover the website changes and the small Function update needed for multiple-photo posting. Albums use the existing private media bucket; older Functions continue supporting single-photo/video posts and reject an album before any upload, preserving its draft.
 
 ## Connect Appwrite
 

@@ -8,6 +8,7 @@ import {
   Role,
 } from "../types";
 import { createSeed } from "../data/seed";
+import { getPostMediaInput, validatePostMedia } from "../lib/postMedia";
 export type Action =
   | { type: "signIn"; email: string; name?: string }
   | {
@@ -414,7 +415,10 @@ export function transition(previous: AppState, action: Action): Transition {
       if (!membership(s, input.circleId))
         return fail("Join this Circle before posting.");
       const content = input.content.trim();
-      if (!content && !input.media)
+      const attachments = getPostMediaInput(input);
+      const mediaProblem = validatePostMedia(attachments);
+      if (mediaProblem) return fail(mediaProblem);
+      if (!content && !attachments.length)
         return fail("Add a thought, photo, or video to your post.");
       if (content.length > 5000)
         return fail("Keep your post under 5,000 characters.");
@@ -424,8 +428,18 @@ export function transition(previous: AppState, action: Action): Transition {
         circleId: input.circleId,
         authorId: userId,
         content,
-        media: input.media,
-        mediaType: input.mediaType,
+        media: attachments[0]?.uri,
+        mediaType: attachments[0]?.type,
+        ...(attachments.length
+          ? {
+              attachments: attachments.map(({ uri, type, width, height }) => ({
+                uri,
+                type,
+                ...(width ? { width } : {}),
+                ...(height ? { height } : {}),
+              })),
+            }
+          : {}),
         createdAt: time(),
         reactions: [],
       });

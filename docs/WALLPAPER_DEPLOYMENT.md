@@ -6,9 +6,17 @@ The wallpaper error uncovered a separate code defect: Appwrite's SDK documents t
 
 The fix uses three authenticated operations: `prepareTheme` reserves a request without calling OpenAI, `generateTheme` claims and runs that request once in the background, and `themeResult` reads its saved preview or error. Results remain private to the requesting current Circle manager. Job state fits the existing private `ai_quotas` JSON records; no new table or data migration is needed. Previously saved themes remain intact.
 
-## Deploy to the existing Function
+## Latest reported deployment and blocker
 
-The last reported Function deployment was `6ae450ad14d61bb758d9`, using the old `dist/main.js` entrypoint and a 60-second timeout. That is a historical observation from Dot, not a fresh check. Inspect the active deployment before changing settings.
+Dot's October 30 completion handoff confirmed active deployment **`6ae4c4c3e1e38ec870b5`** from commit **`30c28ff03e6373086af67fb2bd8742a47d423a47`**, with Node.js 22, entrypoint `main.js`, `npm ci --omit=dev`, and a 180-second timeout. This was a manual archive deployment; no GitHub integration or new credentials were granted. Existing variables, scopes and user-only execution permissions were retained.
+
+Wallpaper setup remains blocked: the Free Appwrite project allows one bucket, already used by `circle-media`, and the console could not create `circle-wallpapers`. Do not repeat that failed bucket-creation step or treat the function deployment as proof that generation works. A Free-plan storage redesign remains separate work requiring the user's approval. Vercel's current production commit and live generation were not verified in that handoff.
+
+The following are reference settings for projects that can support the required private wallpaper bucket. They are not instructions to upgrade this project's plan or change its existing storage.
+
+## Function reference settings
+
+The earlier `dist/main.js`/60-second deployment was replaced by Dot's deployment above. Inspect the active deployment before changing settings.
 
 1. Open existing Appwrite project `6ae3ee7000368dcb80e7`, then **Functions → circle-api**. Its API endpoint is `https://fra.cloud.appwrite.io/v1`.
 2. Connect or update its Git deployment to repository `dwaynethomas2115-alt/circle`, branch `main`, root directory `appwrite/function`.

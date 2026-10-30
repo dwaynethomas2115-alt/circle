@@ -1,14 +1,17 @@
+import { Platform } from "react-native";
+
 export const colors = {
-  ink: "#203B39",
-  muted: "#83918E",
-  teal: "#137F70",
-  tealDark: "#086354",
-  mint: "#EAF4EF",
-  bg: "#F7F8F7",
-  line: "#EBEFED",
+  ink: "#263B36",
+  muted: "#69776F",
+  teal: "#287663",
+  tealDark: "#1E5E4F",
+  mint: "#EDF2E9",
+  bg: "#F7F5F0",
+  line: "#E5E8E0",
   white: "#FFFFFF",
-  orange: "#E2A275",
-  red: "#C66B68",
+  orange: "#BF9167",
+  red: "#B75F59",
+  paper: "#FCFBF8",
 };
 export const font = {
   regular: "DMSans_400Regular",
@@ -16,12 +19,13 @@ export const font = {
   bold: "DMSans_700Bold",
   heading: "Manrope_700Bold",
   extra: "Manrope_800ExtraBold",
+  editorial: Platform.OS === "android" ? "serif" : "Georgia",
 };
 export const shadow = {
   shadowColor: "#183E30",
-  shadowOffset: { width: 0, height: 5 },
-  shadowOpacity: 0.025,
-  shadowRadius: 16,
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.035,
+  shadowRadius: 14,
   elevation: 1,
 };
 export const categories = [

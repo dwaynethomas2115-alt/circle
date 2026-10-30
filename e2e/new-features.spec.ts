@@ -238,6 +238,11 @@ test("AI wallpaper settings accept a combined prompt and preserve the saved them
     page
       .getByRole("button", { name: "Share a moment", exact: true })
       .evaluate((element) => getComputedStyle(element).backgroundColor);
+  await page.goto("/");
+  const homeInk = await page
+    .getByText("circle.", { exact: true })
+    .first()
+    .evaluate((element) => getComputedStyle(element).color);
   await page.goto("/circle/school");
   const schoolColor = await buttonColor();
   await page.goto("/circle/football?tab=settings");
@@ -311,7 +316,7 @@ test("AI wallpaper settings accept a combined prompt and preserve the saved them
       .getByText("circle.", { exact: true })
       .first()
       .evaluate((element) => getComputedStyle(element).color),
-  ).toBe("rgb(32, 59, 57)");
+  ).toBe(homeInk);
   expect(aiRequests).toEqual([]);
   expect(errors).toEqual([]);
 });

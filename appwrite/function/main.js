@@ -207,6 +207,20 @@ function createSeed(assets = {}) {
         content: "Less screen time, more green time. A weekend wandering with our favorite people. These are the little moments that stay with you. \u{1F33F}",
         media: assets.forest || photo("photo-1476231682828-37e571bc172f"),
         mediaType: "image",
+        attachments: [
+          {
+            uri: assets.forest || photo("photo-1476231682828-37e571bc172f"),
+            type: "image"
+          },
+          {
+            uri: assets.coast || photo("photo-1470770841072-f978cf4d019e"),
+            type: "image"
+          },
+          {
+            uri: assets.camping || photo("photo-1472396961693-142e6e269027"),
+            type: "image"
+          }
+        ],
         createdAt: ago(24),
         reactions: ["alex", "james", "emma"],
         tag: "LITTLE MOMENTS"
@@ -361,6 +375,41 @@ function createSeed(assets = {}) {
       }
     ]
   };
+}
+
+// src/lib/postMedia.ts
+var MAX_POST_PHOTOS = 10;
+function getPostMedia(post) {
+  if (post.attachments?.length) return post.attachments;
+  return post.media ? [{ uri: post.media, type: post.mediaType || "image" }] : [];
+}
+function validatePostMedia(items) {
+  if (items.length > MAX_POST_PHOTOS)
+    return `Choose up to ${MAX_POST_PHOTOS} photos for one moment.`;
+  if (items.some((item) => !item.uri || !["image", "video"].includes(item.type)))
+    return "Choose a photo or video for each attachment.";
+  if (items.length > 1 && items.some((item) => item.type === "video"))
+    return "Share up to 10 photos together, or one video on its own.";
+  if (new Set(items.map((item) => item.uri)).size !== items.length)
+    return "Each photo can appear once in a moment.";
+  if (items.some(
+    (item) => [item.width, item.height].some(
+      (value) => value !== void 0 && (!Number.isFinite(value) || value <= 0 || value > 1e5)
+    )
+  ))
+    return "This attachment has invalid dimensions. Choose it again.";
+  return null;
+}
+function getPostMediaInput(input) {
+  if (input.attachments?.length) return input.attachments;
+  return input.media ? [
+    {
+      uri: input.media,
+      type: input.mediaType || "image",
+      durationMs: input.mediaDurationMs,
+      mimeType: input.mediaMimeType
+    }
+  ] : [];
 }
 
 // src/state/model.ts
@@ -676,7 +725,10 @@ function transition(previous, action2) {
       if (!membership(s, input.circleId))
         return fail("Join this Circle before posting.");
       const content = input.content.trim();
-      if (!content && !input.media)
+      const attachments = getPostMediaInput(input);
+      const mediaProblem = validatePostMedia(attachments);
+      if (mediaProblem) return fail(mediaProblem);
+      if (!content && !attachments.length)
         return fail("Add a thought, photo, or video to your post.");
       if (content.length > 5e3)
         return fail("Keep your post under 5,000 characters.");
@@ -686,8 +738,16 @@ function transition(previous, action2) {
         circleId: input.circleId,
         authorId: userId,
         content,
-        media: input.media,
-        mediaType: input.mediaType,
+        media: attachments[0]?.uri,
+        mediaType: attachments[0]?.type,
+        ...attachments.length ? {
+          attachments: attachments.map(({ uri, type, width, height }) => ({
+            uri,
+            type,
+            ...width ? { width } : {},
+            ...height ? { height } : {}
+          }))
+        } : {},
         createdAt: time(),
         reactions: []
       });
@@ -910,10 +970,10 @@ var presetThemes = [
     id: "garden",
     label: "Garden gathering",
     prompt: "A calm garden, soft sage greens and room to breathe.",
-    accent: "#137F70",
-    background: "#F7F8F7",
+    accent: "#287663",
+    background: "#F7F5F0",
     surface: "#FFFFFF",
-    ink: "#203B39",
+    ink: "#263B36",
     motif: "garden",
     source: "preset"
   },
@@ -1254,6 +1314,12 @@ var avatar = z.union([
     "Choose an emoji or upload an image."
   )
 ]);
+var postAttachment = z.object({
+  uri: file,
+  type: z.enum(["image", "video"]),
+  width: z.number().positive().max(1e5).optional(),
+  height: z.number().positive().max(1e5).optional()
+}).strict();
 var circle = z.object({
   name: text(80),
   description: text(1e3),
@@ -1299,8 +1365,15 @@ var actionSchema = z.union([
       content: text(5e3),
       media: z.union([file, z.literal("")]).optional(),
       mediaType: z.enum(["image", "video"]).optional(),
-      mediaDurationMs: z.number().optional()
-    }).strict()
+      mediaDurationMs: z.number().optional(),
+      attachments: z.array(postAttachment).min(1).max(MAX_POST_PHOTOS).optional()
+    }).strict().refine(
+      (input) => !input.attachments || !validatePostMedia(input.attachments),
+      "Choose up to 10 photos, or one video."
+    ).refine(
+      (input) => !input.attachments || (!input.media || input.media === input.attachments[0].uri) && (!input.mediaType || input.mediaType === input.attachments[0].type),
+      "The first attachment must match its preview."
+    )
   }),
   action("deletePost", { postId: id2 }),
   action("toggleReaction", { postId: id2 }),
@@ -1372,6 +1445,7 @@ var requestSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cancelUpload"), fileId: z.string().uuid() }).strict(),
   z.object({ kind: z.literal("snapshot") }).strict(),
   z.object({ kind: z.literal("features") }).strict(),
+  z.object({ kind: z.literal("mediaCapabilities"), circleId: id2 }).strict(),
   z.object({ kind: z.literal("action"), action: actionSchema }).strict(),
   z.object({ kind: z.literal("featureAction"), action: featureSchema }).strict(),
   z.object({
@@ -1483,6 +1557,13 @@ function execute(store, identity, input) {
     app,
     features: structuredClone(store.features)
   };
+  if (request.kind === "mediaCapabilities") {
+    if (!app.members.some(
+      (member) => member.circleId === request.circleId && member.userId === identity.$id
+    ))
+      throw new Error("Join this Circle before posting.");
+    return { store: next, data: { maxPostPhotos: MAX_POST_PHOTOS } };
+  }
   if (request.kind === "beginUpload") {
     next.uploads ??= {};
     const pending = Object.values(next.uploads).filter(
@@ -1626,7 +1707,8 @@ function execute(store, identity, input) {
     };
     const a = request.action;
     if (a.type === "createPost")
-      verifyMedia(a.input.media, void 0, a.input.mediaType || "image");
+      for (const attachment of getPostMediaInput(a.input))
+        verifyMedia(attachment.uri, void 0, attachment.type);
     if (a.type === "updateProfile")
       verifyMedia(
         a.patch.avatar,
@@ -1899,7 +1981,12 @@ async function hydrateMedia(app, services, store, endpoint, project2) {
     circle2.avatar = await sign(circle2.avatar) || "";
     circle2.cover = await sign(circle2.cover) || "";
   }
-  for (const post of next.posts) post.media = await sign(post.media);
+  for (const post of next.posts) {
+    const attachments = getPostMedia(post);
+    for (const item of attachments) item.uri = await sign(item.uri) || "";
+    if (post.attachments) post.attachments = attachments;
+    post.media = attachments[0]?.uri;
+  }
   return next;
 }
 
@@ -2389,7 +2476,12 @@ function records(store) {
     put(record("ai_proposals", uid2, p, p.circleId, uid2));
   for (const entity of [...result.values()]) {
     if (!["profiles", "circles", "posts"].includes(entity.table)) continue;
-    const value = parse(entity.data), paths = [value.avatar, value.cover, value.media];
+    const value = parse(entity.data), paths = /* @__PURE__ */ new Set([
+      value.avatar,
+      value.cover,
+      value.media,
+      ...Array.isArray(value.attachments) ? value.attachments.map((item) => item.uri) : []
+    ]);
     for (const path of paths)
       if (typeof path === "string" && path.startsWith("awfile:")) {
         const fileId = path.slice(7), key = `${entity.table}:${entity.data.entity_id}:${fileId}`;
@@ -2697,7 +2789,9 @@ var Repository = class {
     const strings = reading ? [
       ...store.app.users.map((u) => u.avatar),
       ...store.app.circles.flatMap((c) => [c.avatar, c.cover]),
-      ...store.app.posts.map((p) => p.media)
+      ...store.app.posts.flatMap(
+        (p) => getPostMedia(p).map((item) => item.uri)
+      )
     ] : [];
     const body = JSON.stringify(request);
     for (const match of body.matchAll(/awfile:([a-f0-9-]{36})/g))
@@ -2906,7 +3000,7 @@ async function main({ req, res, error }, injected) {
         )
       });
     }
-    const result = request.kind === "snapshot" || request.kind === "features" || request.kind === "themeResult" ? await repository.read(identity, request) : await repository.mutate(identity, request, async (store) => {
+    const result = request.kind === "snapshot" || request.kind === "features" || request.kind === "mediaCapabilities" || request.kind === "themeResult" ? await repository.read(identity, request) : await repository.mutate(identity, request, async (store) => {
       if (request.kind === "finishUpload")
         await sealUpload(media, store, identity, request.fileId);
       const outcome = execute(store, identity, request);

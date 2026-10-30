@@ -20,6 +20,11 @@ import {
 } from "../../src/features/model";
 import { requestSchema } from "./schema";
 import { validateTheme } from "../../src/features/themes";
+import {
+  getPostMediaInput,
+  MAX_POST_PHOTOS,
+  type PostMediaCapabilities,
+} from "../../src/lib/postMedia";
 
 export interface Upload {
   owner: string;
@@ -146,7 +151,12 @@ export function execute(
 ): {
   store: Store;
   data:
-    AppState | FeatureState | Result | ThemeJobResult | { requestId: string };
+    | AppState
+    | FeatureState
+    | Result
+    | ThemeJobResult
+    | { requestId: string }
+    | PostMediaCapabilities;
 } {
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success)
@@ -169,6 +179,17 @@ export function execute(
     app,
     features: structuredClone(store.features),
   };
+  if (request.kind === "mediaCapabilities") {
+    if (
+      !app.members.some(
+        (member) =>
+          member.circleId === request.circleId &&
+          member.userId === identity.$id,
+      )
+    )
+      throw new Error("Join this Circle before posting.");
+    return { store: next, data: { maxPostPhotos: MAX_POST_PHOTOS } };
+  }
   if (request.kind === "beginUpload") {
     next.uploads ??= {};
     const pending = Object.values(next.uploads).filter(
@@ -365,7 +386,8 @@ export function execute(
     };
     const a = request.action;
     if (a.type === "createPost")
-      verifyMedia(a.input.media, undefined, a.input.mediaType || "image");
+      for (const attachment of getPostMediaInput(a.input))
+        verifyMedia(attachment.uri, undefined, attachment.type);
     if (a.type === "updateProfile")
       verifyMedia(
         a.patch.avatar,

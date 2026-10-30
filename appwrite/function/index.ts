@@ -100,6 +100,7 @@ export default async function main(
     const result =
       request.kind === "snapshot" ||
       request.kind === "features" ||
+      request.kind === "mediaCapabilities" ||
       request.kind === "themeResult"
         ? await repository.read(identity, request)
         : await repository.mutate(identity, request, async (store) => {

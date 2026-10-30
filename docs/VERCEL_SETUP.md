@@ -50,7 +50,7 @@ Keep **`OPENAI_API_KEY` and Appwrite server API keys in Appwrite Function variab
 1. Select **Deploy** in Vercel. Wait for the build to finish.
 2. Copy the production website address Vercel gives you, such as `https://circle-example.vercel.app`.
 3. Open your existing Appwrite project. In its **Platforms** section, add a **Web** platform for that exact hostname, such as **`circle-example.vercel.app`**. Use the hostname without `https://`, a path, or a trailing slash.
-4. Open the Vercel website and sign in with a real Appwrite account. The header should say **APPWRITE**. Confirm that your Circles load, then refresh the browser and check that sign-in still works.
+4. Open the Vercel website and sign in with a real Circle account. The header should say **Private space** (local demo is explicitly labeled **LOCAL DEMO**). Confirm that your Circles load, then refresh the browser and check that sign-in still works.
 5. Open one Circle's page directly and refresh it. Vercel's fallback serves the app for routes such as `/circle/your-circle-id`; exported assets are served as files.
 
 If you later add a custom domain, register that exact hostname as another Appwrite Web platform. Preview deployments can use different hostnames; register the specific preview hosts you use rather than allowing every Vercel customer's domain.

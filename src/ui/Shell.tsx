@@ -23,7 +23,7 @@ import {
   Bell,
   ChevronDown,
   LockKeyhole,
-  Heart,
+  BookOpen,
   Settings2,
   ChevronRight,
 } from "lucide-react-native";
@@ -123,6 +123,20 @@ function ThemedShell({
   const { user, joinedCircles, notifications, mode } = useCircle();
   const [search, setSearch] = useState("");
   const bare = ["/welcome", "/auth"].includes(path);
+  const section =
+    path === "/"
+      ? "Your shared journal"
+      : path.startsWith("/circle/")
+        ? "Inside your Circle"
+        : path === "/circles"
+          ? "Your little worlds"
+          : path === "/inbox"
+            ? "The conversation"
+            : path === "/create"
+              ? "A moment worth keeping"
+              : path === "/profile"
+                ? "Your personal space"
+                : "Your Circle";
   if (bare) return <>{children}</>;
   const go = (p: string) => router.push(p as never);
   return (
@@ -143,11 +157,11 @@ function ThemedShell({
           <Pressable
             accessibilityRole="link"
             onPress={() => go("/")}
-            style={{ paddingHorizontal: 26, paddingTop: 35, paddingBottom: 38 }}
+            style={{ paddingHorizontal: 26, paddingTop: 30, paddingBottom: 32 }}
           >
             <Brand />
           </Pressable>
-          <View style={{ gap: 7, paddingHorizontal: 17 }}>
+          <View style={{ gap: 5, paddingHorizontal: 16 }}>
             {navItems.map(({ label, path: p, icon: Icon }) => {
               const active =
                 path === p || (p === "/circles" && path.startsWith("/circle/"));
@@ -164,13 +178,13 @@ function ThemedShell({
                 >
                   <Icon
                     size={20}
-                    color={active ? theme.accent : "#86938E"}
+                    color={active ? theme.accent : c.muted}
                     strokeWidth={active ? 2 : 1.7}
                   />
                   <T
                     style={{
                       fontFamily: active ? font.bold : font.medium,
-                      color: active ? theme.accent : "#71817A",
+                      color: active ? theme.accent : c.muted,
                       flex: 1,
                       fontSize: 14,
                     }}
@@ -266,14 +280,14 @@ function ThemedShell({
               <LockKeyhole size={15} color={theme.accent} />
             </View>
             <T style={{ fontFamily: font.bold, fontSize: 12, marginBottom: 6 }}>
-              A little closer, together.
+              The days worth keeping.
             </T>
             <T style={{ fontSize: 11, lineHeight: 18, color: "#7A8A80" }}>
-              {"Your moments. Your people.\nAlways in your Circle."}
+              Photographs, conversations, and a little life together.
             </T>
-            <Heart
-              size={13}
-              color="#A7C3A8"
+            <BookOpen
+              size={14}
+              color={theme.accent}
               style={{ position: "absolute", right: 17, top: 19 }}
             />
           </View>
@@ -304,16 +318,22 @@ function ThemedShell({
               backgroundColor: theme.surface,
               borderColor: themeTint(theme.ink, 0.09),
             },
-            !wide && { height: 75, paddingHorizontal: 20 },
+            !wide && { height: 67, paddingHorizontal: 16 },
           ]}
         >
           {wide ? (
-            <View>
-              <T style={{ fontSize: 12, color: c.muted, marginBottom: 4 }}>
-                A space for what matters.
-              </T>
-              <T style={{ fontFamily: font.heading, fontSize: 17 }}>
-                Your people, a little closer <T style={{ fontSize: 16 }}>🌿</T>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 9 }}
+            >
+              <BookOpen size={17} color={c.muted} strokeWidth={1.5} />
+              <T
+                style={{
+                  fontFamily: font.medium,
+                  fontSize: 13,
+                  color: c.muted,
+                }}
+              >
+                {section}
               </T>
             </View>
           ) : (
@@ -331,8 +351,9 @@ function ThemedShell({
                 <Search size={16} color="#94A39B" />
                 <TextInput
                   value={search}
+                  accessibilityLabel="Search memories and people"
                   onChangeText={setSearch}
-                  placeholder="Search your Circles"
+                  placeholder="Search memories and people"
                   placeholderTextColor="#98A39D"
                   style={
                     {
@@ -350,22 +371,17 @@ function ThemedShell({
               </View>
             )}
             <View style={[s.demo, { backgroundColor: tint }]}>
-              <View
-                style={{
-                  width: 5,
-                  height: 5,
-                  borderRadius: 3,
-                  backgroundColor: theme.accent,
-                }}
-              />
+              {mode === "appwrite" && (
+                <LockKeyhole size={11} color={theme.accent} />
+              )}
               <T
                 style={{
-                  fontSize: 9,
+                  fontSize: 10,
                   color: theme.accent,
                   fontFamily: font.bold,
                 }}
               >
-                {mode === "appwrite" ? "APPWRITE" : "LOCAL DEMO"}
+                {mode === "appwrite" ? "Private space" : "LOCAL DEMO"}
               </T>
             </View>
             <View>
@@ -378,19 +394,25 @@ function ThemedShell({
                 <View style={s.notifDot} />
               )}
             </View>
-            <Pressable
-              accessibilityRole="link"
-              onPress={() => go("/profile")}
-              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
-            >
-              <Avatar name={user?.name || "You"} uri={user?.avatar} size={35} />
-              {wide && <ChevronDown size={13} color={c.muted} />}
-            </Pressable>
+            {wide && (
+              <Pressable
+                accessibilityRole="link"
+                onPress={() => go("/profile")}
+                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+              >
+                <Avatar
+                  name={user?.name || "You"}
+                  uri={user?.avatar}
+                  size={35}
+                />
+                {wide && <ChevronDown size={13} color={c.muted} />}
+              </Pressable>
+            )}
           </View>
         </View>
         <ScrollView
           contentContainerStyle={{
-            padding: wide ? 34 : 18,
+            padding: wide ? 32 : width < 370 ? 12 : 18,
             paddingBottom: wide ? 40 : 105 + insets.bottom,
             flexGrow: 1,
           }}
@@ -470,9 +492,17 @@ function ThemedShell({
             ]}
           >
             <LockKeyhole size={11} color="#A8B3AA" />
-            <T style={{ fontSize: 10, color: "#99A69C" }}>
+            <T
+              style={{
+                fontSize: 10,
+                color: c.muted,
+                flexShrink: 1,
+                textAlign: "center",
+                lineHeight: 17,
+              }}
+            >
               {mode === "appwrite"
-                ? "Made for meaningful connections."
+                ? "A shared story, kept between your people."
                 : "Interactive local demo · Sample people & data · No cloud privacy or multi-user chat"}
             </T>
           </View>
@@ -485,7 +515,7 @@ function ThemedShell({
                 backgroundColor: theme.surface,
                 borderColor: themeTint(theme.ink, 0.09),
               },
-              { height: 78 + insets.bottom, paddingBottom: 12 + insets.bottom },
+              { height: 72 + insets.bottom, paddingBottom: 10 + insets.bottom },
             ]}
           >
             {navItems.map(({ label, path: p, icon: Icon }) => (
@@ -535,7 +565,7 @@ function ThemedShell({
 const s = StyleSheet.create({
   root: { flex: 1, flexDirection: "row", backgroundColor: c.bg },
   sidebar: {
-    width: 222,
+    width: 218,
     backgroundColor: "white",
     borderRightWidth: 1,
     borderRightColor: c.line,
@@ -544,7 +574,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    height: 48,
+    height: 46,
     paddingHorizontal: 16,
     borderRadius: 10,
   },
@@ -592,19 +622,19 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   topbar: {
-    height: 96,
+    height: 73,
     backgroundColor: "white",
     borderBottomWidth: 1,
     borderColor: c.line,
-    paddingHorizontal: 35,
+    paddingHorizontal: 32,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
   search: {
     height: 38,
-    width: 230,
-    borderRadius: 9,
+    width: 248,
+    borderRadius: 20,
     backgroundColor: "#F6F8F5",
     flexDirection: "row",
     alignItems: "center",
@@ -615,7 +645,7 @@ const s = StyleSheet.create({
     backgroundColor: c.mint,
     paddingHorizontal: 9,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 20,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,

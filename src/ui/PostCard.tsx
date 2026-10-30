@@ -12,6 +12,7 @@ import {
   UserRoundX,
 } from "lucide-react-native";
 import { useCircle } from "../state/CircleProvider";
+import { getPostMedia } from "../lib/postMedia";
 import type { Post } from "../types";
 import {
   T,
@@ -21,9 +22,10 @@ import {
   Banner,
   CircleAvatar,
 } from "./primitives";
+import { PostGallery } from "./PostGallery";
 import { colors as c, font } from "./theme";
-import { MediaImage, MediaViewer, Video } from "./MediaViewer";
 export { Video } from "./MediaViewer";
+
 export function timeAgo(date: string) {
   const mins = Math.max(
     1,
@@ -35,6 +37,7 @@ export function timeAgo(date: string) {
       ? `${Math.floor(mins / 60)}h ago`
       : `${Math.floor(mins / 1440)}d ago`;
 }
+
 export function PostCard({
   post,
   detail = false,
@@ -44,14 +47,29 @@ export function PostCard({
 }) {
   const { state, user, actions } = useCircle();
   const router = useRouter();
-  const [viewer, setViewer] = useState(false);
-  const [menu, setMenu] = useState(false),
-    [notice, setNotice] = useState("");
+  const [menu, setMenu] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [notice, setNotice] = useState("");
   const author = state.users.find((u) => u.id === post.authorId);
-  const circle = state.circles.find((x) => x.id === post.circleId);
-  const comments = state.comments.filter((x) => x.postId === post.id);
+  const circle = state.circles.find((item) => item.id === post.circleId);
+  const comments = state.comments.filter((item) => item.postId === post.id);
+  const media = getPostMedia(post);
   const liked = !!user && post.reactions.includes(user.id);
   const open = () => router.push(("/post/" + post.id) as never);
+  const created = new Date(post.createdAt);
+  const dateLabel = Number.isFinite(created.getTime())
+    ? created.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Saved in your Circle";
+  const firstLiker = post.reactions.includes(user?.id || "")
+    ? "you"
+    : state.users
+        .find((item) => item.id === post.reactions[0])
+        ?.name.split(" ")[0] || "a Circle member";
+
   async function action(kind: "delete" | "report" | "block") {
     setMenu(false);
     const result =
@@ -74,60 +92,118 @@ export function PostCard({
         : result.error || "Please try again.",
     );
   }
+
+  const reactionRow = (
+    <View style={s.actions}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={liked ? "Remove reaction" : "Like post"}
+        onPress={async () => {
+          const result = await actions.toggleReaction(post.id);
+          if (!result.ok) setNotice(result.error || "Please try again.");
+        }}
+        style={s.action}
+      >
+        <Heart
+          size={23}
+          color={liked ? "#B86B60" : c.ink}
+          fill={liked ? "#B86B60" : "none"}
+          strokeWidth={1.6}
+        />
+        <T style={[s.actionCount, liked && { color: "#B86B60" }]}>
+          {post.reactions.length}
+        </T>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="View comments"
+        onPress={open}
+        style={s.action}
+      >
+        <MessageCircle size={22} color={c.ink} strokeWidth={1.6} />
+        <T style={s.actionCount}>{comments.length}</T>
+      </Pressable>
+      <View style={{ flex: 1 }} />
+      {!detail && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open post"
+          onPress={open}
+          style={s.openPost}
+        >
+          <T style={s.openPostText}>Join in</T>
+          <ArrowUpRight size={15} color={c.teal} strokeWidth={1.7} />
+        </Pressable>
+      )}
+    </View>
+  );
+
   return (
-    <Card style={{ marginBottom: 20 }}>
+    <Card style={s.card}>
       <View style={s.header}>
         <Avatar
           name={author?.name || "Circle member"}
           uri={author?.avatar}
-          size={42}
+          size={40}
         />
-        <View style={{ flex: 1, gap: 5 }}>
-          <T style={{ fontFamily: font.bold, fontSize: 13 }}>
-            {author?.name || "Circle member"}{" "}
-            <T style={{ color: "#A4ADA7", fontSize: 10 }}>
-              {" "}
-              · {timeAgo(post.createdAt)}
-            </T>
+        <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+          <T numberOfLines={1} style={s.author}>
+            {author?.name || "Circle member"}
           </T>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${circle?.name || "Circle"}`}
             onPress={() => router.push(("/circle/" + post.circleId) as never)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+            style={s.circleLink}
           >
             {circle && (
               <CircleAvatar
                 avatar={circle.avatar}
                 color="transparent"
-                size={13}
+                size={14}
               />
             )}
-            <T style={{ fontSize: 11, color: "#7B8C80" }}>{circle?.name}</T>
-            <LockKeyhole size={9} color="#97A59A" />
+            <T numberOfLines={1} style={s.circleName}>
+              {circle?.name || "Your Circle"}
+            </T>
+            <T style={s.relativeTime}>· {timeAgo(post.createdAt)}</T>
           </Pressable>
         </View>
         <IconButton
           icon={MoreHorizontal}
           label="Post options"
           onPress={() => setMenu(!menu)}
-          color="#8D9C91"
+          color={c.muted}
         />
       </View>
       {menu && (
         <View style={s.menu}>
           {post.authorId === user?.id && (
-            <Pressable onPress={() => action("delete")} style={s.menuItem}>
-              <Trash2 size={14} color={c.red} />
-              <T style={{ fontSize: 12, color: c.red }}>Delete post</T>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => action("delete")}
+              style={s.menuItem}
+            >
+              <Trash2 size={15} color={c.red} />
+              <T style={{ fontSize: 13, color: c.red }}>Delete post</T>
             </Pressable>
           )}
-          <Pressable onPress={() => action("report")} style={s.menuItem}>
-            <Flag size={14} color={c.ink} />
-            <T style={{ fontSize: 12 }}>Report post</T>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => action("report")}
+            style={s.menuItem}
+          >
+            <Flag size={15} color={c.ink} />
+            <T style={{ fontSize: 13 }}>Report post</T>
           </Pressable>
           {post.authorId !== user?.id && (
-            <Pressable onPress={() => action("block")} style={s.menuItem}>
-              <UserRoundX size={14} color={c.ink} />
-              <T style={{ fontSize: 12 }}>Block this person</T>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => action("block")}
+              style={s.menuItem}
+            >
+              <UserRoundX size={15} color={c.ink} />
+              <T style={{ fontSize: 13 }}>Block this person</T>
             </Pressable>
           )}
         </View>
@@ -137,173 +213,179 @@ export function PostCard({
           <Banner text={notice} onDismiss={() => setNotice("")} />
         </View>
       )}
-      {post.media &&
-        (post.mediaType === "video" ? (
-          <Video uri={post.media} label={post.content || "Circle video"} />
-        ) : (
-          <MediaImage
-            uri={post.media}
-            label={post.content || "Circle photo"}
-            onPress={() => setViewer(true)}
-          />
-        ))}
-      {post.media && (
-        <MediaViewer
-          visible={viewer}
-          onClose={() => setViewer(false)}
-          uri={post.media}
-          type={post.mediaType}
-          caption={post.content}
-          author={author?.name}
-        />
-      )}
-      <View
-        style={{
-          paddingHorizontal: 22,
-          paddingTop: post.media ? 18 : 0,
-          paddingBottom: 0,
-          gap: 9,
-        }}
-      >
+      {media.length > 0 && <PostGallery post={post} author={author?.name} />}
+      {media.length > 0 && reactionRow}
+      <View style={[s.words, media.length === 0 && s.textMoment]}>
         {post.tag && (
-          <T
-            style={{
-              fontSize: 8,
-              letterSpacing: 1.65,
-              color: c.teal,
-              fontFamily: font.bold,
-            }}
-          >
-            {post.tag}
-          </T>
-        )}
-        <T style={{ fontSize: 13, lineHeight: 23, color: "#53665B" }}>
-          {post.content}
-        </T>
-      </View>
-      <View
-        style={{ paddingHorizontal: 20, paddingTop: 15, paddingBottom: 17 }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 17 }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={liked ? "Remove reaction" : "Like post"}
-            onPress={async () => {
-              const r = await actions.toggleReaction(post.id);
-              if (!r.ok) setNotice(r.error || "Please try again.");
-            }}
-            style={s.action}
-          >
-            <Heart
-              size={20}
-              color={liked ? "#CB8175" : "#7E8E82"}
-              fill={liked ? "#CB8175" : "none"}
-              strokeWidth={1.6}
-            />
-            <T style={{ color: "#75877B", fontSize: 12 }}>
-              {post.reactions.length}
-            </T>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="View comments"
-            onPress={open}
-            style={s.action}
-          >
-            <MessageCircle size={19} color="#7E8E82" strokeWidth={1.6} />
-            <T style={{ color: "#75877B", fontSize: 12 }}>{comments.length}</T>
-          </Pressable>
-          <View style={{ flex: 1 }} />
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <LockKeyhole size={10} color="#A3AFA5" />
-            <T style={{ fontSize: 9, color: "#A0ADA3" }}>Only in this Circle</T>
+          <View style={s.tag}>
+            <T style={s.tagText}>{post.tag}</T>
           </View>
-        </View>
-        {post.reactions.length > 0 && (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-              marginTop: 13,
-            }}
-          >
-            <View style={{ flexDirection: "row", paddingLeft: 4 }}>
+        )}
+        {post.reactions.length > 0 && media.length > 0 && (
+          <View style={s.likedBy}>
+            <View style={s.likerAvatars}>
               {post.reactions.slice(0, 3).map((id) => {
-                const u = state.users.find((x) => x.id === id);
+                const liker = state.users.find((item) => item.id === id);
                 return (
-                  <View key={id} style={{ marginLeft: -4 }}>
+                  <View key={id} style={{ marginLeft: -5 }}>
                     <Avatar
-                      name={u?.name || "Member"}
-                      uri={u?.avatar}
-                      size={20}
+                      name={liker?.name || "Member"}
+                      uri={liker?.avatar}
+                      size={21}
                       border
                     />
                   </View>
                 );
               })}
             </View>
-            <T style={{ fontSize: 10, color: "#8A988E" }}>
-              A little love from{" "}
-              <T
-                style={{
-                  fontSize: 10,
-                  fontFamily: font.bold,
-                  color: "#63796B",
-                }}
-              >
-                {post.reactions.includes(user?.id || "")
-                  ? "you"
-                  : state.users
-                      .find((x) => x.id === post.reactions[0])
-                      ?.name.split(" ")[0]}
-              </T>
+            <T style={s.likedText}>
+              Liked by <T style={s.likedName}>{firstLiker}</T>
               {post.reactions.length > 1
                 ? ` and ${post.reactions.length - 1} others`
                 : ""}
             </T>
           </View>
         )}
-        {!detail && comments.length > 0 && (
-          <Pressable
-            onPress={open}
-            style={{
-              marginTop: 14,
-              paddingTop: 14,
-              borderTopWidth: 1,
-              borderColor: c.line,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
+        {!!post.content && (
+          <T
+            numberOfLines={!detail && !expanded ? 4 : undefined}
+            style={s.caption}
           >
-            <T style={{ fontSize: 11, color: "#96A197" }}>
-              View all {comments.length} comments
-            </T>
-            <ArrowUpRight size={13} color="#9AA89D" />
+            {media.length > 0 && (
+              <T style={s.captionAuthor}>
+                {author?.name || "Circle member"}
+                {"  "}
+              </T>
+            )}
+            {post.content}
+          </T>
+        )}
+        {!detail && !expanded && post.content.length > 280 && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setExpanded(true)}
+          >
+            <T style={s.readMore}>Read more</T>
           </Pressable>
         )}
+        {!detail && comments.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={open}
+            style={s.commentsLink}
+          >
+            <T style={s.commentsText}>
+              View{" "}
+              {comments.length === 1
+                ? "the comment"
+                : `all ${comments.length} comments`}
+            </T>
+          </Pressable>
+        )}
+      </View>
+      {media.length === 0 && reactionRow}
+      <View style={s.footer}>
+        <T style={s.date}>{dateLabel}</T>
+        <View style={s.private}>
+          <LockKeyhole size={10} color={c.muted} />
+          <T style={s.privateText}>Only in this Circle</T>
+        </View>
       </View>
     </Card>
   );
 }
+
 const s = StyleSheet.create({
+  card: {
+    marginBottom: 24,
+    borderRadius: 18,
+    shadowOpacity: 0,
+    elevation: 0,
+    overflow: "hidden",
+  },
   header: {
-    padding: 20,
-    paddingBottom: 17,
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
   },
-  action: { flexDirection: "row", alignItems: "center", gap: 7 },
+  author: { fontFamily: font.bold, fontSize: 14, letterSpacing: -0.15 },
+  circleLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    minWidth: 0,
+  },
+  circleName: { fontSize: 11, color: "#66776D", flexShrink: 1 },
+  relativeTime: { fontSize: 10, color: c.muted },
+  actions: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 21,
+  },
+  action: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 32 },
+  actionCount: { fontFamily: font.medium, fontSize: 12, color: "#687A6D" },
+  openPost: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    minHeight: 32,
+  },
+  openPostText: { fontSize: 11, color: c.teal, fontFamily: font.medium },
+  words: { paddingHorizontal: 21, gap: 10 },
+  textMoment: { paddingTop: 2, paddingBottom: 4 },
+  caption: { fontSize: 14, lineHeight: 23, color: "#42564A" },
+  captionAuthor: { fontFamily: font.bold, fontSize: 14, color: c.ink },
+  tag: {
+    alignSelf: "flex-start",
+    backgroundColor: "#F0F3EB",
+    borderRadius: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+  },
+  tagText: {
+    fontSize: 9,
+    fontFamily: font.bold,
+    letterSpacing: 0.7,
+    color: "#55705A",
+  },
+  likedBy: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 1,
+  },
+  likerAvatars: { flexDirection: "row", paddingLeft: 5 },
+  likedText: { fontSize: 11, color: "#6C7A6F", flex: 1, lineHeight: 17 },
+  likedName: { fontSize: 11, fontFamily: font.bold, color: "#4B6152" },
+  readMore: { color: c.teal, fontSize: 12, paddingVertical: 3 },
+  commentsLink: { alignSelf: "flex-start", paddingVertical: 2 },
+  commentsText: { fontSize: 12, color: "#7C877D" },
+  footer: {
+    paddingHorizontal: 21,
+    paddingTop: 17,
+    paddingBottom: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  date: { fontSize: 10, color: "#8B948B", letterSpacing: 0.2 },
+  private: { flexDirection: "row", alignItems: "center", gap: 4 },
+  privateText: { fontSize: 9, color: c.muted },
   menu: {
-    marginHorizontal: 20,
+    marginHorizontal: 18,
     marginBottom: 14,
-    padding: 8,
+    padding: 6,
     borderWidth: 1,
     borderColor: c.line,
     borderRadius: 12,
     backgroundColor: c.bg,
   },
-  menuItem: { padding: 10, flexDirection: "row", gap: 8, alignItems: "center" },
+  menuItem: { padding: 12, flexDirection: "row", gap: 9, alignItems: "center" },
 });

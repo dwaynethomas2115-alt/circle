@@ -193,6 +193,20 @@ export function createSeed(assets: Record<string, string> = {}): AppState {
           "Less screen time, more green time. A weekend wandering with our favorite people. These are the little moments that stay with you. 🌿",
         media: assets.forest || photo("photo-1476231682828-37e571bc172f"),
         mediaType: "image",
+        attachments: [
+          {
+            uri: assets.forest || photo("photo-1476231682828-37e571bc172f"),
+            type: "image",
+          },
+          {
+            uri: assets.coast || photo("photo-1470770841072-f978cf4d019e"),
+            type: "image",
+          },
+          {
+            uri: assets.camping || photo("photo-1472396961693-142e6e269027"),
+            type: "image",
+          },
+        ],
         createdAt: ago(24),
         reactions: ["alex", "james", "emma"],
         tag: "LITTLE MOMENTS",

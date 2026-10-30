@@ -14,7 +14,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { VideoView, useVideoPlayer } from "expo-video";
-import { Expand, ImageOff, RotateCcw, X } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Expand,
+  ImageOff,
+  RotateCcw,
+  X,
+} from "lucide-react-native";
 import { mediaFrameRatio } from "../lib/media";
 import {
   captureVideoPlayback,
@@ -328,6 +335,8 @@ export function MediaViewer({
   type = "image",
   caption = "",
   author = "",
+  items,
+  initialIndex = 0,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -335,17 +344,39 @@ export function MediaViewer({
   type?: "image" | "video";
   caption?: string;
   author?: string;
+  items?: {
+    uri: string;
+    type: "image" | "video";
+    width?: number;
+    height?: number;
+  }[];
+  initialIndex?: number;
 }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const count = items?.length || 1;
+  const [index, setIndex] = useState(initialIndex);
+  const active = Math.max(0, Math.min(index, count - 1));
+  const item = items?.[active] || { uri, type };
+  useEffect(() => {
+    if (visible) setIndex(initialIndex);
+  }, [visible, initialIndex]);
   useEffect(() => {
     if (!visible || Platform.OS !== "web") return;
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
+      if (count > 1 && event.key === "ArrowRight") {
+        event.preventDefault();
+        setIndex((current) => Math.min(count - 1, current + 1));
+      }
+      if (count > 1 && event.key === "ArrowLeft") {
+        event.preventDefault();
+        setIndex((current) => Math.max(0, current - 1));
+      }
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, [visible, onClose]);
+  }, [visible, onClose, count]);
   return (
     <Modal
       visible={visible}
@@ -368,7 +399,8 @@ export function MediaViewer({
               {author || "A moment from your Circle"}
             </T>
             <T style={{ color: "#96ADA0", fontSize: 10, marginTop: 5 }}>
-              Only in this Circle
+              {count > 1 ? `Photo ${active + 1} of ${count} · ` : ""}Only in
+              this Circle
             </T>
           </View>
           <Pressable
@@ -382,9 +414,9 @@ export function MediaViewer({
           </Pressable>
         </View>
         {visible &&
-          (type === "video" ? (
+          (item.type === "video" ? (
             <Video
-              uri={uri}
+              uri={item.uri}
               label={caption || "Circle video"}
               height={Math.max(240, height - 210 - insets.top - insets.bottom)}
               style={{ flex: 1 }}
@@ -398,8 +430,12 @@ export function MediaViewer({
               centerContent
             >
               <MediaImage
-                uri={uri}
-                label={caption || "Circle photo"}
+                uri={item.uri}
+                label={
+                  count > 1
+                    ? `${caption || "Circle photo"} · Photo ${active + 1} of ${count}`
+                    : caption || "Circle photo"
+                }
                 fullScreen
                 style={{
                   minHeight: height - 240 - insets.top - insets.bottom,
@@ -409,20 +445,55 @@ export function MediaViewer({
             </ScrollView>
           ) : (
             <MediaImage
-              uri={uri}
-              label={caption || "Circle photo"}
+              uri={item.uri}
+              label={
+                count > 1
+                  ? `${caption || "Circle photo"} · Photo ${active + 1} of ${count}`
+                  : caption || "Circle photo"
+              }
               fullScreen
               style={{ backgroundColor: "#10231D" }}
             />
           ))}
         <View style={styles.viewerFooter}>
+          {count > 1 && (
+            <View style={styles.viewerNavigation}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Previous photo in viewer"
+                disabled={active === 0}
+                onPress={() => setIndex(active - 1)}
+                style={[styles.viewerArrow, active === 0 && { opacity: 0.25 }]}
+              >
+                <ChevronLeft size={21} color="white" />
+              </Pressable>
+              <T
+                accessibilityLiveRegion="polite"
+                style={{ color: "#D6E2DB", fontSize: 12 }}
+              >
+                {active + 1} / {count}
+              </T>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Next photo in viewer"
+                disabled={active === count - 1}
+                onPress={() => setIndex(active + 1)}
+                style={[
+                  styles.viewerArrow,
+                  active === count - 1 && { opacity: 0.25 },
+                ]}
+              >
+                <ChevronRight size={21} color="white" />
+              </Pressable>
+            </View>
+          )}
           <T
             numberOfLines={3}
             style={{ color: "#E5EDE7", fontSize: 13, lineHeight: 21 }}
           >
             {caption}
           </T>
-          {Platform.OS === "ios" && type === "image" && (
+          {Platform.OS === "ios" && item.type === "image" && (
             <T style={{ fontSize: 10, color: "#94ACA0", marginTop: 10 }}>
               Pinch to see the little details
             </T>
@@ -487,5 +558,20 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 24,
     minHeight: 70,
+  },
+  viewerNavigation: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 22,
+    marginBottom: 18,
+  },
+  viewerArrow: {
+    width: 42,
+    height: 42,
+    borderRadius: 23,
+    backgroundColor: "#FFFFFF13",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

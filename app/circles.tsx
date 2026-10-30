@@ -64,10 +64,10 @@ export default function CirclesScreen() {
     <View style={{ gap: 24 }}>
       <View style={s.titleRow}>
         <View style={{ gap: 8, flex: 1 }}>
-          <T style={s.eyebrow}>A LITTLE CLOSER, EVERY DAY</T>
-          <T style={s.title}>Your people, in one place.</T>
+          <T style={s.eyebrow}>THE PEOPLE. THE PLACES. THE STORIES.</T>
+          <T style={s.title}>Every Circle, a shared story.</T>
           <T style={{ color: c.muted, lineHeight: 22 }}>
-            Different parts of your life. The same feeling of belonging.
+            A family album. A weekend away. An everyday kind of belonging.
           </T>
         </View>
         <Button icon={Plus} onPress={() => router.push("/new-circle")}>
@@ -162,7 +162,16 @@ export default function CirclesScreen() {
                 accessibilityRole="button"
                 onPress={() => router.push(`/circle/${circle.id}`)}
               >
-                <View style={{ height: 146, backgroundColor: circle.color }}>
+                <View
+                  style={{
+                    height: 172,
+                    margin: 7,
+                    marginBottom: 0,
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    backgroundColor: circle.color,
+                  }}
+                >
                   {circle.cover ? (
                     <Image
                       source={{ uri: circle.cover }}
@@ -175,15 +184,15 @@ export default function CirclesScreen() {
                     </View>
                   )}
                   <View style={s.privatePill}>
-                    <Lock size={10} color="white" />
+                    <Lock size={10} color={c.ink} />
                     <T
                       style={{
-                        color: "white",
+                        color: c.ink,
                         fontSize: 10,
                         fontFamily: font.bold,
                       }}
                     >
-                      PRIVATE CIRCLE
+                      Private Circle
                     </T>
                   </View>
                 </View>
@@ -203,11 +212,17 @@ export default function CirclesScreen() {
                         letterSpacing: 1,
                       }}
                     >
-                      {circle.category.toUpperCase()}
+                      {circle.category}
                     </T>
                     <ArrowUpRight color={c.muted} size={17} />
                   </View>
-                  <T style={{ fontFamily: font.heading, fontSize: 20 }}>
+                  <T
+                    style={{
+                      fontFamily: font.editorial,
+                      fontSize: 25,
+                      lineHeight: 32,
+                    }}
+                  >
                     {circle.name}
                   </T>
                   <T
@@ -247,7 +262,9 @@ export default function CirclesScreen() {
                       ),
                   )}
                   <T style={{ marginLeft: 8, fontSize: 11, color: c.muted }}>
-                    {memberCount} {memberCount === 1 ? "member" : "members"}
+                    {ids.has(circle.id)
+                      ? `${memberCount} ${memberCount === 1 ? "person" : "people"}`
+                      : "A private community"}
                   </T>
                 </View>
                 {ids.has(circle.id) ? (
@@ -362,7 +379,12 @@ const s = StyleSheet.create({
     fontFamily: font.bold,
     letterSpacing: 1.7,
   },
-  title: { fontFamily: font.extra, fontSize: 30, letterSpacing: -1 },
+  title: {
+    fontFamily: font.editorial,
+    fontSize: 34,
+    lineHeight: 43,
+    letterSpacing: -0.7,
+  },
   tabs: {
     flexDirection: "row",
     alignSelf: "flex-start",
@@ -376,7 +398,7 @@ const s = StyleSheet.create({
     position: "absolute",
     top: 14,
     left: 14,
-    backgroundColor: "#203B3970",
+    backgroundColor: "#FFFFFFEB",
     borderRadius: 20,
     paddingVertical: 6,
     paddingHorizontal: 10,

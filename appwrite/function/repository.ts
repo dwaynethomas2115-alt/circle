@@ -8,6 +8,7 @@ import {
   type Store,
 } from "./domain";
 import type { CircleTheme } from "../../src/features/types";
+import { getPostMedia } from "../../src/lib/postMedia";
 import {
   record,
   records,
@@ -363,7 +364,9 @@ export class Repository {
       ? [
           ...store.app.users.map((u) => u.avatar),
           ...store.app.circles.flatMap((c) => [c.avatar, c.cover]),
-          ...store.app.posts.map((p) => p.media),
+          ...store.app.posts.flatMap((p) =>
+            getPostMedia(p).map((item) => item.uri),
+          ),
         ]
       : [];
     const body = JSON.stringify(request);

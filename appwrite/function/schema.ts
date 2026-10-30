@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_POST_PHOTOS, validatePostMedia } from "../../src/lib/postMedia";
 const id = z.string().min(1).max(128);
 const text = (max: number) => z.string().max(max);
 const file = z.string().regex(/^awfile:[a-f0-9-]{36}$/);
@@ -9,6 +10,14 @@ const avatar = z.union([
     "Choose an emoji or upload an image.",
   ),
 ]);
+const postAttachment = z
+  .object({
+    uri: file,
+    type: z.enum(["image", "video"]),
+    width: z.number().positive().max(100_000).optional(),
+    height: z.number().positive().max(100_000).optional(),
+  })
+  .strict();
 const circle = z
   .object({
     name: text(80),
@@ -66,8 +75,25 @@ export const actionSchema = z.union([
         media: z.union([file, z.literal("")]).optional(),
         mediaType: z.enum(["image", "video"]).optional(),
         mediaDurationMs: z.number().optional(),
+        attachments: z
+          .array(postAttachment)
+          .min(1)
+          .max(MAX_POST_PHOTOS)
+          .optional(),
       })
-      .strict(),
+      .strict()
+      .refine(
+        (input) => !input.attachments || !validatePostMedia(input.attachments),
+        "Choose up to 10 photos, or one video.",
+      )
+      .refine(
+        (input) =>
+          !input.attachments ||
+          ((!input.media || input.media === input.attachments[0].uri) &&
+            (!input.mediaType ||
+              input.mediaType === input.attachments[0].type)),
+        "The first attachment must match its preview.",
+      ),
   }),
   action("deletePost", { postId: id }),
   action("toggleReaction", { postId: id }),
@@ -152,6 +178,7 @@ export const requestSchema = z.discriminatedUnion("kind", [
     .strict(),
   z.object({ kind: z.literal("snapshot") }).strict(),
   z.object({ kind: z.literal("features") }).strict(),
+  z.object({ kind: z.literal("mediaCapabilities"), circleId: id }).strict(),
   z.object({ kind: z.literal("action"), action: actionSchema }).strict(),
   z
     .object({ kind: z.literal("featureAction"), action: featureSchema })

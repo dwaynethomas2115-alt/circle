@@ -12,6 +12,12 @@ import type { Action } from "./model";
 import type { CircleActions, CircleContextValue } from "./types";
 import { emptyCircle } from "./empty";
 import { prepareMedia } from "../lib/appwriteMedia";
+import {
+  getPostMediaInput,
+  preparePostAttachments,
+  requireAlbumSupport,
+  type PostMediaCapabilities,
+} from "../lib/postMedia";
 
 /** Appwrite Auth + server-authorized snapshots. No remote state is persisted locally. */
 export function useRemoteCircle(): CircleContextValue {
@@ -216,30 +222,38 @@ export function useRemoteCircle(): CircleContextValue {
       setRole: (circleId, userId, role) =>
         dispatch({ type: "setRole", circleId, userId, role }),
       createPost: (input) =>
-        run(async () =>
-          invokeCircle<Result>({
+        run(async () => {
+          const items = getPostMediaInput(input);
+          const attachments = await preparePostAttachments(
+            items,
+            prepareMedia,
+            {
+              onProgress: input.onUploadProgress,
+              signal: input.uploadSignal,
+              checkAlbumSupport: () =>
+                requireAlbumSupport(items.length, () =>
+                  invokeCircle<PostMediaCapabilities>({
+                    kind: "mediaCapabilities",
+                    circleId: input.circleId,
+                  }),
+                ),
+            },
+          );
+          return invokeCircle<Result>({
             kind: "action",
             action: {
               type: "createPost",
               input: {
                 circleId: input.circleId,
                 content: input.content,
-                mediaType: input.mediaType,
-                mediaDurationMs: input.mediaDurationMs,
-                media: await prepareMedia(
-                  input.media,
-                  input.mediaType,
-                  input.mediaDurationMs,
-                  {
-                    mimeType: input.mediaMimeType,
-                    onProgress: input.onUploadProgress,
-                    signal: input.uploadSignal,
-                  },
-                ),
+                mediaType: attachments[0]?.type,
+                mediaDurationMs: items[0]?.durationMs,
+                media: attachments[0]?.uri,
+                ...(attachments.length > 1 ? { attachments } : {}),
               },
             },
-          }),
-        ),
+          });
+        }),
       deletePost: (postId) => dispatch({ type: "deletePost", postId }),
       toggleReaction: (postId) => dispatch({ type: "toggleReaction", postId }),
       addComment: (postId, content, parentId) =>

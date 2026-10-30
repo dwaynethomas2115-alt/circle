@@ -41,7 +41,8 @@ import {
 import { font, colors as c } from "../ui/theme";
 import { useCircleTheme, themeTint } from "./theme-context";
 import { Video, timeAgo } from "../ui/PostCard";
-import type { Post } from "../types";
+import type { Post, PostAttachment } from "../types";
+import { getPostMedia } from "../lib/postMedia";
 export function HighlightsPanel({ circleId }: { circleId: string }) {
   const { state, mode } = useCircle();
   const theme = useCircleTheme();
@@ -83,8 +84,8 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
       <Card
         style={{
           padding: width < 600 ? 23 : 32,
-          backgroundColor: themeTint(theme.accent, 0.06),
-          borderColor: themeTint(theme.accent, 0.12),
+          backgroundColor: theme.surface,
+          borderColor: c.line,
         }}
       >
         <View
@@ -113,22 +114,22 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
                   letterSpacing: 1.7,
                 }}
               >
-                THE MOMENTS THAT BRING YOU CLOSER
+                A FEW PAGES WORTH REVISITING
               </T>
             </View>
             <T
               style={{
-                fontFamily: font.extra,
-                fontSize: width < 600 ? 27 : 34,
-                letterSpacing: -1,
-                lineHeight: 43,
+                fontFamily: font.editorial,
+                fontSize: width < 600 ? 29 : 37,
+                letterSpacing: -0.8,
+                lineHeight: 44,
               }}
             >
               Your Circle’s Highlights.
             </T>
             <T
               style={{
-                color: "#7B897A",
+                color: c.muted,
                 lineHeight: 23,
                 marginTop: 10,
                 maxWidth: 470,
@@ -141,9 +142,9 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
           </View>
           <View
             style={{
-              width: 90,
-              height: 90,
-              borderRadius: 45,
+              width: 72,
+              height: 72,
+              borderRadius: 20,
               backgroundColor: themeTint(theme.accent, 0.12),
               alignItems: "center",
               justifyContent: "center",
@@ -183,15 +184,15 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
               style={{
                 flex: 1,
                 minWidth: 120,
-                backgroundColor: "#FFFFFFB8",
+                backgroundColor: "#F7F7F2",
                 padding: 16,
-                borderRadius: 13,
+                borderRadius: 12,
                 gap: 9,
               }}
             >
-              <Icon size={17} color="#91A584" />
+              <Icon size={17} color={theme.accent} />
               <T style={{ fontFamily: font.heading, fontSize: 25 }}>{value}</T>
-              <T style={{ fontSize: 11, color: "#8D9C84" }}>{label}</T>
+              <T style={{ fontSize: 11, color: c.muted }}>{label}</T>
             </View>
           ))}
         </View>
@@ -251,7 +252,11 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
               />
             </View>
             <T
-              style={{ fontFamily: font.heading, fontSize: 24, color: "white" }}
+              style={{
+                fontFamily: font.editorial,
+                fontSize: 30,
+                color: "white",
+              }}
             >
               Your Circle, in moments.
             </T>
@@ -275,8 +280,8 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
               Your private Circle montage
             </T>
             <T style={{ color: c.muted, fontSize: 11, lineHeight: 18 }}>
-              A playable slideshow of shared photos, videos, and thoughts. No
-              music or exported video is added.
+              A playable slideshow of shared photos, videos, and thoughts.
+              Photos in an album play together, one by one.
             </T>
           </View>
           <LockKeyhole size={17} color={theme.accent} />
@@ -429,15 +434,31 @@ function Montage({
   const [reduced, setReduced] = useState(false);
   const progress = useRef(new Animated.Value(0)).current;
   const allowed = new Set(feed.map((p) => p.id));
-  const visible = posts.filter((p) => allowed.has(p.id));
-  const post = visible[index];
+  const visible = posts
+    .filter((post) => allowed.has(post.id))
+    .flatMap<{ post: Post; attachment?: PostAttachment; photoIndex: number }>(
+      (post) => {
+        const media = getPostMedia(post);
+        return media.length
+          ? media.map((attachment, photoIndex) => ({
+              post,
+              attachment,
+              photoIndex,
+            }))
+          : [{ post, attachment: undefined, photoIndex: 0 }];
+      },
+    );
+  const post = visible[index]?.post;
+  const media = visible[index]?.attachment;
+  const barStart = Math.max(0, Math.min(index - 5, visible.length - 12));
+  const progressFrames = visible.slice(barStart, barStart + 12);
   const author = state.users.find((x) => x.id === post?.authorId);
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduced);
   }, []);
   useEffect(() => {
     progress.setValue(0);
-    if (paused || finished || !post || post.mediaType === "video" || reduced)
+    if (paused || finished || !post || media?.type === "video" || reduced)
       return;
     const animation = Animated.timing(progress, {
       toValue: 1,
@@ -451,7 +472,16 @@ function Montage({
       }
     });
     return () => animation.stop();
-  }, [index, paused, finished, post, progress, reduced, visible.length]);
+  }, [
+    index,
+    paused,
+    finished,
+    post,
+    media?.type,
+    progress,
+    reduced,
+    visible.length,
+  ]);
   function next() {
     setFinished(false);
     if (index < visible.length - 1) setIndex(index + 1);
@@ -473,35 +503,42 @@ function Montage({
         }}
       >
         <View style={{ flexDirection: "row", gap: 5, marginBottom: 17 }}>
-          {visible.map((p, i) => (
-            <View
-              key={p.id}
-              style={{
-                height: 3,
-                backgroundColor: "#FFFFFF30",
-                flex: 1,
-                borderRadius: 2,
-                overflow: "hidden",
-              }}
-            >
-              {i < index || finished ? (
-                <View
-                  style={{ height: 3, backgroundColor: "white", width: "100%" }}
-                />
-              ) : i === index ? (
-                <Animated.View
-                  style={{
-                    height: 3,
-                    backgroundColor: "white",
-                    width: progress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ["0%", "100%"],
-                    }),
-                  }}
-                />
-              ) : null}
-            </View>
-          ))}
+          {progressFrames.map((frame, offset) => {
+            const i = barStart + offset;
+            return (
+              <View
+                key={`${frame.post.id}:${frame.photoIndex}`}
+                style={{
+                  height: 3,
+                  backgroundColor: "#FFFFFF30",
+                  flex: 1,
+                  borderRadius: 2,
+                  overflow: "hidden",
+                }}
+              >
+                {i < index || finished ? (
+                  <View
+                    style={{
+                      height: 3,
+                      backgroundColor: "white",
+                      width: "100%",
+                    }}
+                  />
+                ) : i === index ? (
+                  <Animated.View
+                    style={{
+                      height: 3,
+                      backgroundColor: "white",
+                      width: progress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ["0%", "100%"],
+                      }),
+                    }}
+                  />
+                ) : null}
+              </View>
+            );
+          })}
         </View>
         <View
           style={{
@@ -524,7 +561,7 @@ function Montage({
               {author?.name || "Your people"}
             </T>
           </View>
-          {post?.mediaType !== "video" && (
+          {media?.type !== "video" && (
             <IconButton
               icon={paused ? Play : Pause}
               label={paused ? "Resume Highlights" : "Pause Highlights"}
@@ -553,10 +590,10 @@ function Montage({
             <T style={{ color: "white", padding: 24, textAlign: "center" }}>
               This moment is no longer available.
             </T>
-          ) : post.media ? (
-            post.mediaType === "video" ? (
+          ) : media ? (
+            media.type === "video" ? (
               <View style={{ width: "100%" }}>
-                <Video uri={post.media} />
+                <Video uri={media.uri} />
                 <T
                   style={{
                     color: "#B9CEC0",
@@ -570,7 +607,7 @@ function Montage({
               </View>
             ) : (
               <Image
-                source={{ uri: post.media }}
+                source={{ uri: media.uri }}
                 style={{ width: "100%", height: "100%" }}
                 resizeMode="contain"
                 accessibilityLabel={post.content || "A shared Circle photo"}
@@ -632,7 +669,7 @@ function Montage({
             </View>
           )}
         </View>
-        {post?.media && (
+        {post && media && (
           <T
             numberOfLines={3}
             style={{

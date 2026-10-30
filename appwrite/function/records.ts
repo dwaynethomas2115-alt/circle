@@ -239,7 +239,14 @@ export function records(store: Store): Map<string, Entity> {
   for (const entity of [...result.values()]) {
     if (!["profiles", "circles", "posts"].includes(entity.table)) continue;
     const value = parse(entity.data),
-      paths = [value.avatar, value.cover, value.media];
+      paths = new Set([
+        value.avatar,
+        value.cover,
+        value.media,
+        ...(Array.isArray(value.attachments)
+          ? value.attachments.map((item: { uri?: string }) => item.uri)
+          : []),
+      ]);
     for (const path of paths)
       if (typeof path === "string" && path.startsWith("awfile:")) {
         const fileId = path.slice(7),

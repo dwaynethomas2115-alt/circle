@@ -1,6 +1,7 @@
 import { Permission, Role, type Storage, type Tokens } from "node-appwrite";
 import type { AppState } from "../../src/types";
 import type { Identity, Store } from "./domain";
+import { getPostMedia } from "../../src/lib/postMedia";
 export const BUCKET = "circle-media";
 export const MAX_PHOTO_BYTES = 200 * 1024 * 1024;
 export const MAX_FILE_BYTES = 250 * 1024 * 1024;
@@ -101,6 +102,11 @@ export async function hydrateMedia(
     circle.avatar = (await sign(circle.avatar)) || "";
     circle.cover = (await sign(circle.cover)) || "";
   }
-  for (const post of next.posts) post.media = await sign(post.media);
+  for (const post of next.posts) {
+    const attachments = getPostMedia(post);
+    for (const item of attachments) item.uri = (await sign(item.uri)) || "";
+    if (post.attachments) post.attachments = attachments;
+    post.media = attachments[0]?.uri;
+  }
   return next;
 }

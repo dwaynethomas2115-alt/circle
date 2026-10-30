@@ -5,6 +5,7 @@ import { demoAssets } from "../data/assets";
 import { AppState, Result } from "../types";
 import { Action, transition, visibleFeed } from "./model";
 import { CircleActions, CircleContextValue } from "./types";
+import { getPostMediaInput, preparePostAttachments } from "../lib/postMedia";
 import { serializeDemoState } from "./persistence";
 import {
   persistDemoMedia,
@@ -173,12 +174,22 @@ export function useDemoCircle(): CircleContextValue {
       setRole: (circleId, userId, role) =>
         dispatch({ type: "setRole", circleId, userId, role }),
       createPost: (input) =>
-        withMedia(async (persist) =>
-          dispatch({
+        withMedia(async (persist) => {
+          const attachments = await preparePostAttachments(
+            getPostMediaInput(input),
+            async (uri) => persist(uri),
+            { signal: input.uploadSignal },
+          );
+          return dispatch({
             type: "createPost",
-            input: { ...input, media: await persist(input.media) },
-          }),
-        ),
+            input: {
+              ...input,
+              attachments,
+              media: attachments[0]?.uri,
+              mediaType: attachments[0]?.type,
+            },
+          });
+        }),
       deletePost: (postId) => dispatch({ type: "deletePost", postId }),
       toggleReaction: (postId) => dispatch({ type: "toggleReaction", postId }),
       addComment: (postId, content, parentId) =>
