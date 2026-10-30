@@ -220,9 +220,16 @@ test("Circle calendar validates local times, creates plans and changes RSVP", as
   expect(errors).toEqual([]);
 });
 
-test("theme previews apply only to one Circle and survive reload", async ({
+test("AI wallpaper settings accept a combined prompt and preserve the saved theme when unavailable", async ({
   page,
 }) => {
+  const errors: string[] = [];
+  const aiRequests: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    if (/api\.openai\.com|\/storage\/v1\//.test(request.url()))
+      aiRequests.push(request.url());
+  });
   const buttonColor = () =>
     page
       .getByRole("button", { name: "Share a moment", exact: true })
@@ -231,41 +238,66 @@ test("theme previews apply only to one Circle and survive reload", async ({
   const schoolColor = await buttonColor();
   await page.goto("/circle/football?tab=settings");
   const originalColor = await buttonColor();
-  await page
-    .getByLabel("Theme description", { exact: true })
-    .fill("Pink unicorns, blush and a little everyday magic");
-  await page
-    .getByRole("button", { name: "Preview from description", exact: true })
-    .click();
+  const savedThemes = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("circle.features.v1") || "{}").themes,
+  );
+  const prompt = page.getByLabel("Theme prompt", { exact: true });
+  await expect(
+    page.getByText("Dream up your Circle", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(
-      "Your prompt matched a curated demo preset. Preview it below, then apply when you’re happy.",
+      "AI wallpapers need a connected Circle backend. Local Demo doesn’t generate images.",
       { exact: true },
     ),
   ).toBeVisible();
-  expect(await buttonColor()).toBe(originalColor);
+  await expect(prompt).toHaveAttribute("maxlength", "1000");
+  await expect(page.getByRole("radio")).toHaveCount(0);
+  const description =
+    "Anastasia likes pink and Barbies and Daelin likes tornados and volcanos. " +
+    "Blend all of their favorite things into one colorful illustrated wallpaper. " +
+    "Include pink dollhouses, swirling tornadoes, glowing volcanoes, magical clouds, and bright playful landscapes. " +
+    "Make each subject clearly visible and give the whole Circle a joyful, imaginative atmosphere with plenty of detail.";
+  expect(description.length).toBeGreaterThan(300);
+  await prompt.fill(description);
+  await expect(prompt).toHaveValue(description);
   await page
-    .getByRole("button", { name: "Apply to this Circle", exact: true })
+    .getByRole("button", { name: "Generate wallpaper", exact: true })
     .click();
-  await expect.poll(buttonColor).toBe("rgb(164, 62, 120)");
-  await page.reload();
-  await expect.poll(buttonColor).toBe("rgb(164, 62, 120)");
-  await page.goto("/circle/school");
-  expect(await buttonColor()).toBe(schoolColor);
-  await page.goto("/circle/football?tab=settings");
-  await page
-    .getByRole("radio", { name: "The Vegas weekend", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Apply to this Circle", exact: true })
-    .click();
-  await expect.poll(buttonColor).toBe("rgb(34, 99, 79)");
-  await page.goto("/circle/family");
-  await expect.poll(buttonColor).toBe("rgb(164, 62, 120)");
+  await expect(
+    page.getByText(
+      "AI wallpaper generation needs a connected backend and a server-side OpenAI API key. Local Demo keeps your current theme unchanged.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(prompt).toHaveValue(description);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(prompt).toHaveValue(description);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await prompt.scrollIntoViewIfNeeded();
   await page.screenshot({
-    path: "/tmp/circle-family-theme.png",
+    path: "/tmp/circle-wallpaper-editor-phone.png",
     fullPage: true,
   });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  expect(await buttonColor()).toBe(originalColor);
+  expect(
+    await page.evaluate(
+      () =>
+        JSON.parse(localStorage.getItem("circle.features.v1") || "{}").themes,
+    ),
+  ).toEqual(savedThemes);
+  await expect(
+    page.getByText(/Your prompt matched a curated demo preset/),
+  ).toHaveCount(0);
+  await page.reload();
+  expect(await buttonColor()).toBe(originalColor);
+  await page.goto("/circle/school");
+  expect(await buttonColor()).toBe(schoolColor);
+  await page.goto("/circle/family");
+  await expect.poll(buttonColor).toBe("rgb(164, 62, 120)");
   await page.goto("/");
   await expect(
     page.getByText("Welcome home, Alex.", { exact: false }),
@@ -276,6 +308,8 @@ test("theme previews apply only to one Circle and survive reload", async ({
       .first()
       .evaluate((element) => getComputedStyle(element).color),
   ).toBe("rgb(32, 59, 57)");
+  expect(aiRequests).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test("Highlights opens a playable private montage and saves read state", async ({

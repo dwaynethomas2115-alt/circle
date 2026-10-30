@@ -1,11 +1,8 @@
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { requireSupabase } from "./supabase";
-import {
-  MEDIA_MAX_BYTES,
-  PHOTO_JPEG_QUALITY,
-  photoResize,
-  validateMedia,
-} from "./media";
+import { PHOTO_JPEG_QUALITY, photoResize, validateMedia } from "./media";
+import { openUploadSource } from "./uploadSource";
+import { resumableUpload, type UploadProgress } from "./resumableUpload";
 
 export type CircleRole = "owner" | "admin" | "moderator" | "member";
 export type CircleCategory =
@@ -389,6 +386,11 @@ export const backend = {
     uri: string,
     type: "image" | "video",
     durationMs?: number,
+    options?: {
+      mimeType?: string;
+      onProgress?: (progress: UploadProgress) => void;
+      signal?: AbortSignal;
+    },
   ): Promise<{ path: string; type: "image" | "video" }> {
     let uploadUri = uri;
     let contentType = "video/mp4";
@@ -409,40 +411,62 @@ export const backend = {
       const error = validateMedia({ type, durationMs });
       if (error) throw new Error(error);
     }
-    const response = await fetch(uploadUri);
-    if (!response.ok)
-      throw new Error(
-        "This media file could not be read. Please select it again.",
-      );
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > MEDIA_MAX_BYTES)
-      throw new Error("Media must be under 50 MB.");
-    if (type === "video") {
-      const mime = response.headers
-        .get("content-type")
-        ?.split(";")[0]
-        .toLowerCase();
-      if (mime && mime !== "application/octet-stream") {
-        const error = validateMedia({ type, durationMs, mimeType: mime });
-        if (error) throw new Error(error);
+    const source = await openUploadSource(uploadUri);
+    try {
+      const validation = validateMedia({
+        type,
+        bytes: source.size,
+        durationMs,
+      });
+      if (validation) throw new Error(validation);
+      if (type === "video") {
+        const mime = (options?.mimeType || source.contentType)
+          ?.split(";")[0]
+          .toLowerCase();
+        if (mime && mime !== "application/octet-stream") {
+          const error = validateMedia({ type, durationMs, mimeType: mime });
+          if (error) throw new Error(error);
+        }
+        contentType =
+          mime === "video/quicktime" || /\.mov(?:[?#]|$)/i.test(uri)
+            ? "video/quicktime"
+            : "video/mp4";
       }
-      contentType =
-        mime === "video/quicktime" || /\.mov(?:[?#]|$)/i.test(uri)
-          ? "video/quicktime"
-          : "video/mp4";
+      const extension =
+        type === "image"
+          ? "jpg"
+          : contentType === "video/quicktime"
+            ? "mov"
+            : "mp4";
+      const path = `${circleId}/${await userId()}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+      const supabase = requireSupabase();
+      await resumableUpload({
+        endpoint: `${process.env.EXPO_PUBLIC_SUPABASE_URL!.replace(/\/$/, "")}/storage/v1/upload/resumable`,
+        bucket: "circle-media",
+        path,
+        contentType,
+        source,
+        headers: async () => {
+          const { data, error } = await supabase.auth.getSession();
+          if (error || !data.session)
+            throw new Error("Please sign in again before uploading.");
+          return {
+            Authorization: `Bearer ${data.session.access_token}`,
+            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+          };
+        },
+        onProgress: options?.onProgress,
+        signal: options?.signal,
+      });
+      return { path, type };
+    } catch (cause) {
+      if (options?.signal?.aborted)
+        throw new Error("Upload canceled. Your draft is still here.");
+      throw cause;
+    } finally {
+      // Cache cleanup must not turn a completed upload into a false failure.
+      await source.close?.().catch(() => {});
     }
-    const extension =
-      type === "image"
-        ? "jpg"
-        : contentType === "video/quicktime"
-          ? "mov"
-          : "mp4";
-    const path = `${circleId}/${await userId()}/${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
-    const { error } = await requireSupabase()
-      .storage.from("circle-media")
-      .upload(path, bytes, { contentType, upsert: false });
-    if (error) throw error;
-    return { path, type };
   },
   async signedMediaUrl(path: string, seconds = 60) {
     const { data, error } = await requireSupabase()

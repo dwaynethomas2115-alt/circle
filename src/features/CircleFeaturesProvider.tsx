@@ -26,7 +26,7 @@ import {
 } from "./model";
 import type { FeatureAction } from "./model";
 import { createFeatureSeed } from "./seed";
-import { themeFromPrompt } from "./themes";
+import { THEME_PROMPT_MAX_LENGTH } from "./themes";
 import { useRemoteFeatures } from "./remote";
 const KEY = "circle.features.v1";
 const FeatureContext = createContext<FeatureContextValue | null>(null);
@@ -148,14 +148,15 @@ function useDemoFeatures(): FeatureContextValue {
             ok: false,
             error: "Only the owner or an admin can preview a Circle theme.",
           };
-        if (prompt.trim().length < 3 || prompt.length > 300)
+        if (prompt.trim().length < 3 || prompt.length > THEME_PROMPT_MAX_LENGTH)
           return {
             ok: false,
-            error: "Describe your theme in 3–300 characters.",
+            error: "Describe your wallpaper in 3–1,000 characters.",
           };
         return {
-          ok: true,
-          theme: { ...themeFromPrompt(prompt.trim()), source: "preset" },
+          ok: false,
+          error:
+            "AI wallpaper generation needs a connected backend and a server-side OpenAI API key. Local Demo keeps your current theme unchanged.",
         };
       },
     }),

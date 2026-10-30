@@ -126,4 +126,7 @@ export interface CreatePostInput {
   media?: string;
   mediaType?: "image" | "video";
   mediaDurationMs?: number;
+  mediaMimeType?: string;
+  onUploadProgress?: (progress: { uploaded: number; total: number }) => void;
+  uploadSignal?: AbortSignal;
 }

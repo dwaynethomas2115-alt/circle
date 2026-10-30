@@ -5,6 +5,9 @@ import {
   presetThemes,
   themeFromPrompt,
   validateTheme,
+  THEME_PROMPT_MAX_LENGTH,
+  wallpaperCircleId,
+  validateGeneratedWallpaper,
 } from "./themes";
 
 test("every bundled theme has an accessible, typed palette", () => {
@@ -29,7 +32,10 @@ test("local prompts choose curated presets without claiming AI generation", () =
     assert.equal(theme.source, "preset");
     assert.equal(theme.prompt, prompt);
   }
-  assert.equal(themeFromPrompt("a".repeat(700)).prompt.length, 300);
+  assert.equal(
+    themeFromPrompt("a".repeat(1_500)).prompt.length,
+    THEME_PROMPT_MAX_LENGTH,
+  );
 });
 
 test("theme validation rejects unsafe data and unreadable palettes", () => {
@@ -43,13 +49,81 @@ test("theme validation rejects unsafe data and unreadable palettes", () => {
     { ...defaultTheme, surface: "#333333" },
     { ...defaultTheme, motif: "arbitrary-html" },
     { ...defaultTheme, source: "browser-script" },
-    { ...defaultTheme, prompt: "a".repeat(301) },
+    { ...defaultTheme, prompt: "a".repeat(THEME_PROMPT_MAX_LENGTH + 1) },
     { ...defaultTheme, css: "body{display:none}" },
     { ...defaultTheme, label: "" },
     { ...defaultTheme, id: "<script>" },
   ])
     assert.equal(validateTheme(value), false);
   assert.equal(validateTheme({ ...defaultTheme, source: "ai" }), true);
+});
+
+test("wallpapers accept only private generated storage paths", () => {
+  const circle = "11111111-1111-4111-8111-111111111111";
+  const request = "22222222-2222-4222-8222-222222222222";
+  const wallpaperPath = `${circle}/${request}.webp`;
+  assert.equal(wallpaperCircleId(wallpaperPath), circle);
+  assert.equal(
+    validateTheme({ ...defaultTheme, source: "ai", wallpaperPath }),
+    true,
+  );
+  assert.equal(validateTheme({ ...defaultTheme, wallpaperPath }), false);
+  for (const path of [
+    `https://example.test/${wallpaperPath}`,
+    `//example.test/${wallpaperPath}`,
+    `../${wallpaperPath}`,
+    `${wallpaperPath}?token=secret`,
+    `${circle}/../../private.webp`,
+    `${circle}/${request}.svg`,
+    "javascript:alert(1)",
+    "data:image/webp;base64,aA==",
+    undefined,
+    null,
+  ]) {
+    assert.equal(wallpaperCircleId(path), undefined);
+    assert.equal(
+      validateTheme({ ...defaultTheme, source: "ai", wallpaperPath: path }),
+      false,
+    );
+  }
+  assert.equal(
+    validateTheme({
+      ...defaultTheme,
+      source: "ai",
+      wallpaperPath,
+      wallpaperUrl: "https://example.test/private",
+    }),
+    false,
+  );
+});
+
+test("wallpaper prompts keep combined interests beyond the previous 300 character cap", () => {
+  const prompt = `${"Anastasia likes pink and Barbies; Daelin likes tornadoes and volcanoes. ".repeat(8)}`;
+  assert.ok(prompt.length > 300 && prompt.length < THEME_PROMPT_MAX_LENGTH);
+  assert.equal(validateTheme({ ...defaultTheme, source: "ai", prompt }), true);
+});
+
+test("new generations require actual art scoped to the requested Circle", () => {
+  const circle = "11111111-1111-4111-8111-111111111111";
+  const wallpaperPath = `${circle}/22222222-2222-4222-8222-222222222222.webp`;
+  assert.equal(
+    validateGeneratedWallpaper(
+      { ...defaultTheme, source: "ai", wallpaperPath },
+      circle,
+    ),
+    true,
+  );
+  assert.equal(
+    validateGeneratedWallpaper({ ...defaultTheme, source: "ai" }, circle),
+    false,
+  );
+  assert.equal(
+    validateGeneratedWallpaper(
+      { ...defaultTheme, source: "ai", wallpaperPath },
+      "33333333-3333-4333-8333-333333333333",
+    ),
+    false,
+  );
 });
 
 test("generating a preview never mutates the shared presets", () => {

@@ -5,33 +5,48 @@ import {
   mediaFrameRatio,
   validateMedia,
   formatDuration,
-  MEDIA_MAX_BYTES,
+  PHOTO_MAX_BYTES,
+  VIDEO_MAX_BYTES,
+  VIDEO_MAX_DURATION_MS,
 } from "./media";
 
 test("photo processing preserves portrait and landscape proportions without upscaling", () => {
   assert.equal(photoResize(1200, 800), undefined);
-  assert.deepEqual(photoResize(6000, 4000), { width: 2560, height: 1707 });
-  assert.deepEqual(photoResize(3000, 6000), { width: 1280, height: 2560 });
+  assert.deepEqual(photoResize(6000, 4000), { width: 4096, height: 2731 });
+  assert.deepEqual(photoResize(3000, 6000), { width: 2048, height: 4096 });
   assert.equal(photoResize(0, 1000), undefined);
 });
 test("media validation rejects oversized, long, unsupported and unreadable videos", () => {
   assert.equal(
     validateMedia({
       type: "video",
-      bytes: 1024,
-      durationMs: 60000,
+      durationMs: VIDEO_MAX_DURATION_MS,
+      bytes: VIDEO_MAX_BYTES,
       mimeType: "video/quicktime",
     }),
     null,
   );
   assert.match(
-    validateMedia({ type: "image", bytes: MEDIA_MAX_BYTES + 1 }) || "",
+    validateMedia({ type: "image", bytes: PHOTO_MAX_BYTES + 1 }) || "",
     /50 MB/,
   );
   assert.match(
-    validateMedia({ type: "video", durationMs: 60001 }) || "",
-    /one minute/,
+    validateMedia({ type: "video", durationMs: VIDEO_MAX_DURATION_MS + 1 }) ||
+      "",
+    /10 minutes/,
   );
+  assert.equal(validateMedia({ type: "image", bytes: PHOTO_MAX_BYTES }), null);
+  assert.equal(validateMedia({ type: "video", durationMs: 61_000 }), null);
+  assert.match(
+    validateMedia({
+      type: "video",
+      durationMs: 90_000,
+      bytes: VIDEO_MAX_BYTES + 1,
+    }) || "",
+    /250 MB/,
+  );
+  for (const bytes of [0, -1, NaN, Infinity])
+    assert.match(validateMedia({ type: "image", bytes }) || "", /empty|read/);
   assert.match(
     validateMedia({
       type: "video",

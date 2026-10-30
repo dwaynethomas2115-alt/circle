@@ -36,18 +36,18 @@ Offline mode skips Expo's online dependency-version lookup; it does not disable 
 - Welcome, adult signup/sign-in, profile editing/photo, logout, and account deletion confirmation.
 - Circle creation with avatar/cover, category, description, discoverability, and approval settings.
 - Joined/discoverable/pending Circles, join requests, approve/reject, private single-use invitation codes, member removal, admin/moderator roles, and leave flow.
-- Text/photo/short-video posts, heart reactions, threaded comments and replies, author deletion, content reporting, blocking, and moderator report review/removal.
+- Text/photo/video posts, heart reactions, threaded comments and replies, author deletion, content reporting, blocking, and moderator report review/removal.
 - Circle group messages with sender identity, timestamps, deletion, and Supabase change subscriptions.
 - In-app notifications and read controls for invitations, requests, approvals, posts, reactions, and comment/reply activity. Push delivery and direct messages are outside this MVP.
 - Loading, empty, error, unauthorized, and removed-content states; bundled typography and imagery.
 
 Circle now also includes:
 
-- **Better media:** full-size photo viewing, portrait/landscape proportions, loading/retry states, high-quality JPEG processing up to 2560px without upscaling, and short-video playback controls. Photos are re-encoded to remove source EXIF/GPS; videos remain limited to 60 seconds/50 MB.
+- **Better media:** photos up to 50 MB input, processed at up to 4096px without upscaling and high JPEG quality; videos up to 250 MB and 10 minutes with playback controls. Full-size viewing preserves portrait/landscape proportions. Photos are re-encoded to remove source EXIF/GPS. Remote uploads use bounded 6 MiB resumable chunks, progress, and retry; the storage provider’s own file-size and capacity limits still apply.
 - **Highlights:** private counts of posts, messages, comments and polls since your last reviewed visit; upcoming events; and a playable montage of shared photos, videos, and text. This montage is an in-app slideshow; it does not export a newly rendered video file.
 - **Calendar:** accessible from the Circle header, with a month view, member-created events with local time entry, and going/maybe/not-going RSVPs.
 - **Polls in group chat:** 2–6 options, one changeable vote per person, actual result counts, optional expiry, and author/manager close/delete controls.
-- **Circle themes:** subtle palettes and sparse motifs across the Circle shell, feed, chat, and feature tabs. Presets include pink/unicorn-inspired magic, Vegas emerald and champagne, garden, coastal, and minimal. Owner/admin settings preview and apply themes; Home retains Circle’s base style. Demo prompts select clearly labeled local presets. Real AI generates a validated palette/motif specification after server configuration.
+- **Circle wallpapers:** owners/admins describe their Circle in a single prompt. OpenAI generates a colorful illustrated wallpaper combining the requested interests, plus readable matching interface colors. Preview before applying; the image fills the Circle backdrop and a prominent hero area. Home retains Circle’s base style. Images are private and require server configuration. Local Demo never pretends to generate an image; older saved palettes remain supported.
 - **Circle room:** accessed through the header’s **Join room** button; drop-in group voice/video on the web uses LiveKit. Microphone and camera start off; local demo offers only a self-preview, with no remote users or simulated presence. Real calls require configured Supabase, LiveKit, and reliable removal delivery. Native currently opens the same Circle in a configured browser app; native in-app WebRTC calling has not been implemented.
 
 The default appearance is light. Dark mode, push notifications, albums, subscriptions, direct messaging, and child accounts remain outside this version.
@@ -56,13 +56,13 @@ The default appearance is light. Dark mode, push notifications, albums, subscrip
 
 Follow [the backend setup and security guide](supabase/README.md), including the account-deletion Edge Function deployment.
 
-1. For a fresh Supabase project, apply `supabase/migrations/202610270001_circle.sql` and then `supabase/migrations/202610290001_circle_features.sql`. For an existing Circle project, apply only the pending feature migration. `supabase db push` on a linked project tracks pending migrations.
+1. For a fresh Supabase project, apply the files in `supabase/migrations/` in filename order. Existing Circle projects should apply only pending migrations, including `202610300001_circle_wallpapers.sql` and `202610300002_large_media.sql`. `supabase db push` on a linked project tracks pending migrations.
 2. Copy `.env.example` to `.env` and set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` to the public project URL/key. **Never put a service-role key in the app.** Both values must be configured; restart Expo after changing them.
 3. Configure email confirmation and redirect URLs in Supabase Auth. Deploy the `delete-account` Edge Function described in the backend guide.
 4. In this cloud environment, add the exact project hostname (`<project-ref>.supabase.co`) to environment Internet access if required. Public configuration variables are build-time Expo settings; they are not secret credentials.
 5. Sign up two real adult test users and complete the hosted two-user checks in the backend guide. Remote mode starts empty and never copies demo identities/content into Supabase.
 
-Chat polls/calendar/Highlights and preset themes need only the new migration. For real AI themes, follow the [beginner OpenAI setup guide](docs/OPENAI_SETUP.md) and [backend feature setup](supabase/FEATURES.md). The OpenAI key belongs only in Supabase Edge Function secrets. For live rooms, follow [LiveKit setup](supabase/ROOMS.md), including signed provider webhooks, durable membership-removal retries, and the fail-closed enablement switch. These services may incur provider charges. Only an explicit theme description is sent to the AI provider, never private posts, media, or chat.
+Chat polls/calendar/Highlights need the community-features migration. For real AI wallpapers, follow the [beginner OpenAI setup guide](docs/OPENAI_SETUP.md) and [backend feature setup](supabase/FEATURES.md): apply the wallpaper migration, update the `generate-circle-theme` Edge Function, and rebuild the app. A GitHub push alone does not deploy SQL or Edge Functions. The OpenAI key belongs only in Supabase Edge Function secrets. For live rooms, follow [LiveKit setup](supabase/ROOMS.md), including signed provider webhooks, durable membership-removal retries, and the fail-closed enablement switch. These services may incur provider charges. Only an explicit theme description is sent to the AI provider, never private posts, media, or chat.
 
 When configured, the provider switches to Supabase; all app operations use real Auth, PostgreSQL RLS, private Storage, and Realtime. Backend/schema failures appear as errors and clear cached private feed/chat data. There is no silent fallback to demo data.
 
@@ -86,7 +86,7 @@ supabase/tests/            Actual migration/RLS tests in embedded PostgreSQL
 
 Database authorization is independent of UI visibility. Membership grants are made through checked RPCs, invitations are hashed and single-use, media buckets are private, and anonymous users cannot query application data. Discoverability exposes metadata only. Removed members cannot make new content reads/writes or create new media URLs. Already downloaded content cannot be recalled; a previously issued signed URL remains valid until its expiry. The app requests 60-second URLs, but Storage's general signing API can issue other lifetimes to authorized readers. This is not an end-to-end encrypted messenger.
 
-Photo uploads are decoded/re-encoded to strip original EXIF/GPS. Short videos are client-limited to one minute and bucket-limited to 50 MB; server video transcoding, duration enforcement, and metadata stripping need a later media-processing service. See the backend guide for storage cleanup and release limitations.
+Photo uploads are decoded/re-encoded to strip original EXIF/GPS. Videos are client-limited to ten minutes and 250 MB; server video transcoding, duration enforcement, and metadata stripping need a later media-processing service. A storage provider may enforce a lower cap: Supabase Free can limit individual files to 50 MB even after the bucket migration. The app reports that restriction instead of silently failing or claiming unlimited uploads. See the backend guide for storage configuration, cleanup, and release limitations.
 
 ## Validation
 

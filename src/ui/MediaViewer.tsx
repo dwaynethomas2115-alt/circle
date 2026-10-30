@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -16,6 +16,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { Expand, ImageOff, RotateCcw, X } from "lucide-react-native";
 import { mediaFrameRatio } from "../lib/media";
+import {
+  captureVideoPlayback,
+  restoreVideoPlayback,
+  videoMediaIdentity,
+  type VideoPlaybackSnapshot,
+} from "../lib/videoPlayback";
 import { T } from "./primitives";
 import { colors as c, font } from "./theme";
 
@@ -132,41 +138,133 @@ export function MediaImage({
   );
 }
 
-/** No autoplay, no looping, and native playback, scrubbing, volume and full-screen controls. */
-export function Video({
-  uri,
-  height = 340,
-  label = "Circle video",
-  style,
-}: {
+interface VideoProps {
   uri: string;
   height?: number;
   label?: string;
   style?: StyleProp<ViewStyle>;
+}
+
+/** Signed URL refreshes keep the active player and its playhead untouched. */
+export function Video(props: VideoProps) {
+  return <StableVideo key={videoMediaIdentity(props.uri)} {...props} />;
+}
+
+function StableVideo(props: VideoProps) {
+  const latestUri = useRef(props.uri);
+  latestUri.current = props.uri;
+  const [source, setSource] = useState({ uri: props.uri, attempt: 0 });
+  const failed = useRef(false);
+  const resume = useRef<VideoPlaybackSnapshot | null>(null);
+  const attempted = useRef(new Set([props.uri]));
+  const retry = useCallback(() => {
+    const uri = latestUri.current;
+    attempted.current.add(uri);
+    failed.current = false;
+    setSource((previous) => ({ uri, attempt: previous.attempt + 1 }));
+  }, []);
+  const onFailure = useCallback(
+    (snapshot: VideoPlaybackSnapshot) => {
+      resume.current = snapshot;
+      failed.current = true;
+      const uri = latestUri.current;
+      if (uri !== source.uri && !attempted.current.has(uri)) retry();
+    },
+    [retry, source.uri],
+  );
+  // If the request expired before the next token arrived, recover once when a
+  // fresh URL becomes available. A failed URL never starts an automatic loop.
+  useEffect(() => {
+    if (failed.current && !attempted.current.has(props.uri)) retry();
+  }, [props.uri, retry]);
+  return (
+    <VideoPlayback
+      key={`${source.attempt}:${source.uri}`}
+      {...props}
+      uri={source.uri}
+      snapshot={resume.current}
+      onFailure={onFailure}
+      onReady={() => {
+        failed.current = false;
+        resume.current = null;
+      }}
+      onRetry={retry}
+    />
+  );
+}
+
+/** Recovery remounts only after a real failure, restoring the viewer's choices.
+ * Expo's web replaceAsync autoplays; a fresh managed player avoids that behavior.
+ */
+function VideoPlayback({
+  uri,
+  height = 340,
+  label = "Circle video",
+  style,
+  snapshot,
+  onFailure,
+  onReady,
+  onRetry,
+}: VideoProps & {
+  snapshot: VideoPlaybackSnapshot | null;
+  onFailure: (snapshot: VideoPlaybackSnapshot) => void;
+  onReady: () => void;
+  onRetry: () => void;
 }) {
+  const initialSnapshot = useRef(snapshot).current;
   const player = useVideoPlayer(uri, (p) => {
-    p.muted = true;
+    p.muted = initialSnapshot?.muted ?? true;
+    p.volume = initialSnapshot?.volume ?? 1;
+    p.playbackRate = initialSnapshot?.playbackRate ?? 1;
     p.loop = false;
   });
   const [status, setStatus] = useState(player.status);
-  const [retrying, setRetrying] = useState(false);
+  const pendingResume = useRef(initialSnapshot);
+  const intendedPlaying = useRef(initialSnapshot?.playing ?? false);
+  const callbacks = useRef({ onFailure, onReady });
+  callbacks.current = { onFailure, onReady };
   useEffect(() => {
-    const listener = player.addListener("statusChange", (event) => {
-      setStatus(event.status);
-      setRetrying(false);
+    const handleStatus = (next: typeof player.status) => {
+      setStatus(next);
+      if (next === "readyToPlay") {
+        const previous = pendingResume.current;
+        if (previous) {
+          // Clear first: restoring the seek/play state may emit another event.
+          pendingResume.current = null;
+          try {
+            restoreVideoPlayback(player, previous);
+          } catch {
+            pendingResume.current = previous;
+            setStatus("error");
+            callbacks.current.onFailure(previous);
+            return;
+          }
+        }
+        callbacks.current.onReady();
+      } else if (next === "error") {
+        callbacks.current.onFailure(
+          pendingResume.current ||
+            captureVideoPlayback(player, intendedPlaying.current),
+        );
+      }
+    };
+    const statusListener = player.addListener("statusChange", (event) =>
+      handleStatus(event.status),
+    );
+    const playingListener = player.addListener("playingChange", (event) => {
+      if (!pendingResume.current && player.status !== "error")
+        intendedPlaying.current = event.isPlaying;
     });
+    const endedListener = player.addListener("playToEnd", () => {
+      intendedPlaying.current = false;
+    });
+    handleStatus(player.status);
     return () => {
-      listener.remove();
+      statusListener.remove();
+      playingListener.remove();
+      endedListener.remove();
     };
   }, [player]);
-  const retry = async () => {
-    setRetrying(true);
-    try {
-      await player.replaceAsync(uri);
-    } catch {
-      setRetrying(false);
-    }
-  };
   return (
     <View
       style={[
@@ -188,7 +286,7 @@ export function Video({
         allowsFullscreen
         allowsPictureInPicture={false}
       />
-      {(status === "idle" || status === "loading" || retrying) && (
+      {(status === "idle" || status === "loading") && (
         <View
           pointerEvents="none"
           style={[styles.center, { backgroundColor: "#10231D" }]}
@@ -199,7 +297,7 @@ export function Video({
           </T>
         </View>
       )}
-      {status === "error" && !retrying && (
+      {status === "error" && (
         <View style={[styles.center, { backgroundColor: "#10231D" }]}>
           <T style={[styles.errorText, { color: "#D6E2DB" }]}>
             This video couldn’t load.
@@ -207,7 +305,7 @@ export function Video({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Retry video"
-            onPress={retry}
+            onPress={onRetry}
             style={styles.retry}
           >
             <RotateCcw size={14} color="#D6E2DB" />

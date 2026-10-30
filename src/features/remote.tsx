@@ -11,7 +11,12 @@ import type {
   ThemeResult,
 } from "./types";
 import { canManageFeatures, emptyFeatures, visibleFeatures } from "./model";
-import { validateTheme } from "./themes";
+import {
+  THEME_PROMPT_MAX_LENGTH,
+  validateGeneratedWallpaper,
+  validateTheme,
+} from "./themes";
+import { ThemeGenerationError } from "./theme-errors";
 import { featureBackend } from "./backend";
 
 type Row = Record<string, unknown>;
@@ -299,6 +304,11 @@ export function useRemoteFeatures(): FeatureContextValue {
             ok: false,
             error: "Only the owner or an admin can preview a Circle theme.",
           };
+        if (prompt.trim().length < 3 || prompt.length > THEME_PROMPT_MAX_LENGTH)
+          return {
+            ok: false,
+            error: "Describe your wallpaper in 3–1,000 characters.",
+          };
         try {
           const theme = await featureBackend.generateTheme(circleId, prompt);
           if (
@@ -310,9 +320,23 @@ export function useRemoteFeatures(): FeatureContextValue {
             throw new Error(
               "The generated theme was invalid. Please try again.",
             );
+          if (!validateGeneratedWallpaper(theme, circleId))
+            throw new Error(
+              "Your theme server needs the wallpaper update. Deploy the latest generate-circle-theme function and wallpaper migration, then try again. Your current theme is unchanged.",
+            );
           return { ok: true, theme };
         } catch (problem) {
-          return { ok: false, error: failure(problem) };
+          return {
+            ok: false,
+            error: failure(problem),
+            ...(problem instanceof ThemeGenerationError
+              ? {
+                  code: problem.code,
+                  retryAfterSeconds: problem.retryAfterSeconds,
+                  resetAt: problem.resetAt,
+                }
+              : {}),
+          };
         }
       },
     }),

@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import type { AppState } from "../types";
 import { mapDemoImages, restoreDemoState } from "../state/persistence";
+import { MEDIA_MAX_BYTES } from "./media";
 
 const PREFIX = "circle-local-media:";
 const liveToStored = new Map<string, string>();
@@ -84,8 +85,8 @@ export async function persistDemoMedia(
         "The selected file is no longer available. Please choose it again.",
       );
     const blob = await response.blob();
-    if (blob.size > 50 * 1024 * 1024)
-      throw new Error("Please choose demo media smaller than 50 MB.");
+    if (blob.size > MEDIA_MAX_BYTES)
+      throw new Error("Please choose demo media up to 250 MB.");
     try {
       await operation("readwrite", (store) => store.put(blob, key));
     } catch {

@@ -1,8 +1,15 @@
 /** Shared limits for the picker, previews, and private-media uploads. */
-export const MEDIA_MAX_BYTES = 50 * 1024 * 1024;
-export const VIDEO_MAX_DURATION_MS = 60_000;
-export const PHOTO_MAX_EDGE = 2560;
-export const PHOTO_JPEG_QUALITY = 0.9;
+export const PHOTO_MAX_BYTES = 50 * 1024 * 1024;
+export const VIDEO_MAX_BYTES = 250 * 1024 * 1024;
+/** Maximum attachment size; photos have their own smaller limit. */
+export const MEDIA_MAX_BYTES = VIDEO_MAX_BYTES;
+export const VIDEO_MAX_DURATION_MS = 10 * 60_000;
+export const PHOTO_MAX_EDGE = 4096;
+export const PHOTO_JPEG_QUALITY = 0.95;
+
+export function mediaMaxBytes(type: "image" | "video") {
+  return type === "image" ? PHOTO_MAX_BYTES : VIDEO_MAX_BYTES;
+}
 
 export interface MediaDimensions {
   width: number;
@@ -48,17 +55,24 @@ export function validateMedia(input: {
   durationMs?: number;
   mimeType?: string | null;
 }) {
-  if (input.bytes && input.bytes > MEDIA_MAX_BYTES)
-    return "Please choose a file smaller than 50 MB.";
+  if (
+    input.bytes !== undefined &&
+    (!Number.isFinite(input.bytes) || input.bytes <= 0)
+  )
+    return "This file is empty or could not be read. Please choose it again.";
+  if (input.bytes && input.bytes > mediaMaxBytes(input.type))
+    return input.type === "image"
+      ? "Please choose a photo up to 50 MB."
+      : "Please choose a video up to 250 MB.";
   if (input.type === "video") {
     if (
       !input.durationMs ||
       input.durationMs <= 0 ||
       !Number.isFinite(input.durationMs)
     )
-      return "We couldn’t read this video. Please choose an MP4 or MOV video up to one minute long.";
+      return "We couldn’t read this video. Please choose an MP4 or MOV video up to 10 minutes long.";
     if (input.durationMs > VIDEO_MAX_DURATION_MS)
-      return "Please choose a video up to one minute long.";
+      return "Please choose a video up to 10 minutes long.";
     if (
       input.mimeType &&
       !["video/mp4", "video/quicktime", "video/x-m4v"].includes(

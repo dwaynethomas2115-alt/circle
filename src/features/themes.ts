@@ -1,5 +1,14 @@
 import type { CircleTheme } from "./types";
 
+export const THEME_PROMPT_MAX_LENGTH = 1_000;
+
+/** Private storage identifiers only. Theme JSON cannot supply arbitrary URLs. */
+export function wallpaperCircleId(path: unknown): string | undefined {
+  if (typeof path !== "string") return undefined;
+  const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+  return new RegExp(`^(${uuid})/${uuid}\\.webp$`, "i").exec(path)?.[1];
+}
+
 /** Curated, accessible light palettes. Demo prompts choose from these presets. */
 export const presetThemes: CircleTheme[] = [
   {
@@ -67,7 +76,7 @@ export const defaultTheme = presetThemes[0];
 
 /** This is deliberately deterministic, not a claim of AI generation. */
 export function themeFromPrompt(prompt: string): CircleTheme {
-  const words = prompt.trim().slice(0, 300);
+  const words = prompt.trim().slice(0, THEME_PROMPT_MAX_LENGTH);
   const normalized = words.toLowerCase();
   const motif = /unicorn|pink|blush|magic|fairy|sparkle|princess/.test(
     normalized,
@@ -120,9 +129,13 @@ export function validateTheme(value: unknown): value is CircleTheme {
     "motif",
     "source",
   ];
+  const hasWallpaper = Object.hasOwn(theme, "wallpaperPath");
   if (
-    Object.keys(theme).length !== keys.length ||
-    !Object.keys(theme).every((key) => keys.includes(key))
+    Object.keys(theme).length !== keys.length + Number(hasWallpaper) ||
+    !keys.every((key) => Object.hasOwn(theme, key)) ||
+    !Object.keys(theme).every(
+      (key) => keys.includes(key) || key === "wallpaperPath",
+    )
   )
     return false;
   if (typeof theme.id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(theme.id))
@@ -133,7 +146,10 @@ export function validateTheme(value: unknown): value is CircleTheme {
     theme.label.length > 60
   )
     return false;
-  if (typeof theme.prompt !== "string" || theme.prompt.length > 300)
+  if (
+    typeof theme.prompt !== "string" ||
+    theme.prompt.length > THEME_PROMPT_MAX_LENGTH
+  )
     return false;
   if (
     !["garden", "unicorn", "vegas", "coast", "minimal"].includes(
@@ -142,6 +158,11 @@ export function validateTheme(value: unknown): value is CircleTheme {
   )
     return false;
   if (theme.source !== "preset" && theme.source !== "ai") return false;
+  if (
+    hasWallpaper &&
+    (theme.source !== "ai" || !wallpaperCircleId(theme.wallpaperPath))
+  )
+    return false;
   const fields = ["accent", "background", "surface", "ink"] as const;
   if (
     !fields.every(
@@ -158,5 +179,18 @@ export function validateTheme(value: unknown): value is CircleTheme {
     contrast(accent, "#FFFFFF") >= 4.5 &&
     contrast(ink, background) >= 4.5 &&
     contrast(ink, surface) >= 4.5
+  );
+}
+
+/** Legacy palettes remain readable, but a new AI generation must include art. */
+export function validateGeneratedWallpaper(
+  value: unknown,
+  circleId: string,
+): value is CircleTheme & { wallpaperPath: string } {
+  return (
+    validateTheme(value) &&
+    value.source === "ai" &&
+    wallpaperCircleId(value.wallpaperPath)?.toLowerCase() ===
+      circleId.toLowerCase()
   );
 }

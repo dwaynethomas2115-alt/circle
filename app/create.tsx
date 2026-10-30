@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -38,7 +38,9 @@ import {
   photoResize,
   PHOTO_JPEG_QUALITY,
   validateMedia,
+  VIDEO_MAX_DURATION_MS,
 } from "../src/lib/media";
+import type { UploadProgress } from "../src/lib/resumableUpload";
 import { colors as c, font } from "../src/ui/theme";
 
 interface ChosenMedia {
@@ -49,6 +51,7 @@ interface ChosenMedia {
   duration?: number;
   bytes?: number;
   name?: string;
+  mimeType?: string;
 }
 
 /** Expo supplies duration on native; browsers may need to read container metadata. */
@@ -90,6 +93,11 @@ export default function CreatePost() {
   const [stage, setStage] = useState<"idle" | "preparing" | "sharing">("idle");
   const [media, setMedia] = useState<ChosenMedia | null>(null);
   const [viewer, setViewer] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(
+    null,
+  );
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), []);
   const router = useRouter();
   const busy = stage !== "idle";
   const chosenCircle = joinedCircles.find((x) => x.id === circle);
@@ -106,7 +114,7 @@ export default function CreatePost() {
         mediaTypes: [type],
         quality: 1,
         exif: false,
-        videoMaxDuration: 60,
+        videoMaxDuration: VIDEO_MAX_DURATION_MS / 1000,
         allowsEditing: false,
         videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
       });
@@ -134,6 +142,7 @@ export default function CreatePost() {
           duration,
           bytes: a.fileSize,
           name: a.fileName || undefined,
+          mimeType: a.mimeType || undefined,
         });
       } else {
         const resize = photoResize(a.width, a.height);
@@ -167,6 +176,8 @@ export default function CreatePost() {
     if (busy) return;
     setStage("sharing");
     setError("");
+    setUploadProgress(null);
+    uploadController.current = new AbortController();
     try {
       const result = await actions.createPost({
         circleId: circle,
@@ -174,6 +185,9 @@ export default function CreatePost() {
         media: media?.uri,
         mediaType: media?.type,
         mediaDurationMs: media?.duration,
+        mediaMimeType: media?.mimeType,
+        onUploadProgress: setUploadProgress,
+        uploadSignal: uploadController.current.signal,
       });
       if (result.ok) router.replace(("/post/" + result.id) as never);
       else
@@ -188,6 +202,7 @@ export default function CreatePost() {
           : "Could not share your moment. Your draft is still here.",
       );
     } finally {
+      uploadController.current = null;
       setStage("idle");
     }
   }
@@ -373,7 +388,7 @@ export default function CreatePost() {
             disabled={busy}
             onPress={() => pick("videos")}
           >
-            Short video
+            Video
           </Button>
           <T
             style={{
@@ -383,7 +398,7 @@ export default function CreatePost() {
               flexShrink: 1,
             }}
           >
-            One photo or video{"\n"}Up to 1 minute · 50 MB
+            Photos up to 50 MB{"\n"}Videos up to 10 minutes · 250 MB
           </T>
         </View>
         {media?.type === "video" && (
@@ -437,7 +452,9 @@ export default function CreatePost() {
             accessibilityLabel={
               mode === "demo"
                 ? "Saving your moment"
-                : "Uploading and sharing your moment"
+                : uploadProgress
+                  ? `Uploading your media: ${Math.round((uploadProgress.uploaded / uploadProgress.total) * 100)} percent`
+                  : "Uploading and sharing your moment"
             }
             style={{
               flexDirection: "row",
@@ -453,9 +470,24 @@ export default function CreatePost() {
               {mode === "demo"
                 ? "Saving your moment on this device…"
                 : media
-                  ? "Uploading your media and sharing with your Circle…"
+                  ? uploadProgress
+                    ? uploadProgress.uploaded === uploadProgress.total
+                      ? "Upload complete. Sharing with your Circle…"
+                      : `Uploading ${formatBytes(uploadProgress.uploaded)} of ${formatBytes(uploadProgress.total)} (${Math.round((uploadProgress.uploaded / uploadProgress.total) * 100)}%)…`
+                    : "Preparing your upload…"
                   : "Sharing with your Circle…"}
             </T>
+            {mode !== "demo" &&
+              media &&
+              (!uploadProgress ||
+                uploadProgress.uploaded < uploadProgress.total) && (
+                <Button
+                  secondary
+                  onPress={() => uploadController.current?.abort()}
+                >
+                  Cancel upload
+                </Button>
+              )}
           </View>
         )}
       </Card>

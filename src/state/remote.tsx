@@ -639,14 +639,30 @@ export function useRemoteCircle(): CircleContextValue {
                 input.media,
                 input.mediaType || "image",
                 input.mediaDurationMs,
+                {
+                  mimeType: input.mediaMimeType,
+                  onProgress: input.onUploadProgress,
+                  signal: input.uploadSignal,
+                },
               )
             : undefined;
-          const post = await backend.createPost(
-            input.circleId,
-            input.content,
-            attachment ? [attachment] : [],
-          );
-          return post.id;
+          try {
+            if (input.uploadSignal?.aborted)
+              throw new Error("Upload canceled. Your draft is still here.");
+            const post = await backend.createPost(
+              input.circleId,
+              input.content,
+              attachment ? [attachment] : [],
+            );
+            return post.id;
+          } catch (cause) {
+            // Completed media must not become orphaned when post creation fails.
+            if (attachment)
+              await supabase?.storage
+                .from("circle-media")
+                .remove([attachment.path]);
+            throw cause;
+          }
         }),
       deletePost: (postId: string) => run(() => backend.deletePost(postId)),
       toggleReaction: (postId: string) =>
