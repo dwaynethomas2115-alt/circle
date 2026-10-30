@@ -28,7 +28,7 @@ test("media validation rejects oversized, long, unsupported and unreadable video
   );
   assert.match(
     validateMedia({ type: "image", bytes: PHOTO_MAX_BYTES + 1 }) || "",
-    /50 MB/,
+    /200 MB/,
   );
   assert.match(
     validateMedia({ type: "video", durationMs: VIDEO_MAX_DURATION_MS + 1 }) ||
@@ -36,6 +36,17 @@ test("media validation rejects oversized, long, unsupported and unreadable video
     /10 minutes/,
   );
   assert.equal(validateMedia({ type: "image", bytes: PHOTO_MAX_BYTES }), null);
+  // Fixed input sizes guard against restoring the old 50 MB rejection.
+  for (const bytes of [
+    50 * 1024 * 1024 + 1,
+    100 * 1024 * 1024,
+    200 * 1024 * 1024,
+  ])
+    assert.equal(validateMedia({ type: "image", bytes }), null);
+  assert.match(
+    validateMedia({ type: "image", bytes: 200 * 1024 * 1024 + 1 }) || "",
+    /200 MB/,
+  );
   assert.equal(validateMedia({ type: "video", durationMs: 61_000 }), null);
   assert.match(
     validateMedia({

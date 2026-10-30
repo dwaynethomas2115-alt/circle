@@ -398,7 +398,7 @@ export default function CreatePost() {
               flexShrink: 1,
             }}
           >
-            Photos up to 50 MB{"\n"}Videos up to 10 minutes · 250 MB
+            Photos up to 200 MB{"\n"}Videos up to 10 minutes · 250 MB
           </T>
         </View>
         {media?.type === "video" && (

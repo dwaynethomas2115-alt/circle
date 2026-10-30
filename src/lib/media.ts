@@ -1,5 +1,5 @@
 /** Shared limits for the picker, previews, and private-media uploads. */
-export const PHOTO_MAX_BYTES = 50 * 1024 * 1024;
+export const PHOTO_MAX_BYTES = 200 * 1024 * 1024;
 export const VIDEO_MAX_BYTES = 250 * 1024 * 1024;
 /** Maximum attachment size; photos have their own smaller limit. */
 export const MEDIA_MAX_BYTES = VIDEO_MAX_BYTES;
@@ -62,7 +62,7 @@ export function validateMedia(input: {
     return "This file is empty or could not be read. Please choose it again.";
   if (input.bytes && input.bytes > mediaMaxBytes(input.type))
     return input.type === "image"
-      ? "Please choose a photo up to 50 MB."
+      ? "Please choose a photo up to 200 MB."
       : "Please choose a video up to 250 MB.";
   if (input.type === "video") {
     if (

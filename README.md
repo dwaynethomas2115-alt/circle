@@ -43,7 +43,7 @@ Offline mode skips Expo's online dependency-version lookup; it does not disable 
 
 Circle now also includes:
 
-- **Better media:** photos up to 50 MB input, processed at up to 4096px without upscaling and high JPEG quality; videos up to 250 MB and 10 minutes with playback controls. Full-size viewing preserves portrait/landscape proportions. Photos are re-encoded to remove source EXIF/GPS. Remote uploads use bounded 6 MiB resumable chunks, progress, and retry; the storage provider’s own file-size and capacity limits still apply.
+- **Better media:** photos up to 200 MB input, processed at up to 4096px without upscaling and high JPEG quality; videos up to 250 MB and 10 minutes with playback controls. Full-size viewing preserves portrait/landscape proportions. Photos are re-encoded to remove source EXIF/GPS; the original file is not retained. Available device memory and supported image formats still constrain decoding very large photos. Remote uploads use bounded 6 MiB resumable chunks, progress, and retry; the storage provider’s own file-size and capacity limits still apply.
 - **Highlights:** private counts of posts, messages, comments and polls since your last reviewed visit; upcoming events; and a playable montage of shared photos, videos, and text. This montage is an in-app slideshow; it does not export a newly rendered video file.
 - **Calendar:** accessible from the Circle header, with a month view, member-created events with local time entry, and going/maybe/not-going RSVPs.
 - **Polls in group chat:** 2–6 options, one changeable vote per person, actual result counts, optional expiry, and author/manager close/delete controls.
