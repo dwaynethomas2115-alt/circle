@@ -6,7 +6,10 @@ export const THEME_PROMPT_MAX_LENGTH = 1_000;
 export function wallpaperCircleId(path: unknown): string | undefined {
   if (typeof path !== "string") return undefined;
   const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-  return new RegExp(`^(${uuid})/${uuid}\\.webp$`, "i").exec(path)?.[1];
+  const match = new RegExp(`^([A-Za-z0-9_-]{1,128})/${uuid}\\.webp$`, "i").exec(
+    path,
+  );
+  return match?.[0] === path ? match[1] : undefined;
 }
 
 /** Curated, accessible light palettes. Demo prompts choose from these presets. */
@@ -190,7 +193,6 @@ export function validateGeneratedWallpaper(
   return (
     validateTheme(value) &&
     value.source === "ai" &&
-    wallpaperCircleId(value.wallpaperPath)?.toLowerCase() ===
-      circleId.toLowerCase()
+    wallpaperCircleId(value.wallpaperPath) === circleId
   );
 }

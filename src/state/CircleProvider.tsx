@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react";
-import { isSupabaseConfigured } from "../lib/supabase";
+import { isAppwriteEnabled } from "../lib/appwrite";
 import { useDemoCircle } from "./demo";
 import { useRemoteCircle } from "./remote";
 import { CircleContextValue } from "./types";
@@ -20,7 +20,7 @@ function RemoteProvider({ children }: { children: React.ReactNode }) {
   );
 }
 export function CircleProvider({ children }: { children: React.ReactNode }) {
-  return isSupabaseConfigured ? (
+  return isAppwriteEnabled ? (
     <RemoteProvider>{children}</RemoteProvider>
   ) : (
     <DemoProvider>{children}</DemoProvider>

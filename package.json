@@ -12,15 +12,18 @@
     "lint": "eslint .",
     "test": "tsx --test src/state/*.test.ts src/features/*.test.ts src/lib/*.test.ts",
     "build:web": "expo export --platform web --max-workers 2",
-    "test:privacy": "node --test supabase/tests/*.mjs",
+    "test:privacy": "npm run test:appwrite",
     "test:e2e": "playwright test",
-    "format": "prettier --write app src e2e *.json *.ts *.js README.md supabase/README.md supabase/functions"
+    "format": "prettier --write app src e2e appwrite *.json *.ts *.js README.md",
+    "build:appwrite": "esbuild appwrite/function/index.ts --bundle --platform=node --target=node22 --format=esm --packages=external --outfile=appwrite/function/main.js",
+    "test:appwrite": "tsx --test appwrite/tests/*.test.ts",
+    "test:legacy-supabase": "node --test supabase/tests/*.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/dm-sans": "^0.4.2",
     "@expo-google-fonts/manrope": "^0.4.2",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@supabase/supabase-js": "^2.95.0",
+    "appwrite": "^29.2.0",
     "expo": "~54.0.38",
     "expo-asset": "~12.0.12",
     "expo-constants": "~18.0.13",
@@ -37,6 +40,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-appwrite": "^3.1.0",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
@@ -47,11 +51,14 @@
     "@electric-sql/pglite": "^0.5.12",
     "@playwright/test": "^1.58.0",
     "@types/react": "~19.1.10",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.0",
     "eslint-config-expo": "~10.0.0",
+    "node-appwrite": "^31.1.0",
     "prettier": "^3.9.10",
     "tsx": "^4.21.0",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=22.18.0"

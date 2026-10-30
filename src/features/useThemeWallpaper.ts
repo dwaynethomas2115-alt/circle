@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
-import { supabase } from "../lib/supabase";
+import { invokeCircle } from "../lib/appwrite";
 import { useCircle } from "../state/CircleProvider";
 import { useCircleFeatures } from "./CircleFeaturesProvider";
 import { wallpaperCircleId } from "./themes";
@@ -34,7 +34,7 @@ export function useThemeWallpaper(theme?: CircleTheme): {
   const isManager = member?.role === "owner" || member?.role === "admin";
   const allowed = Boolean(
     base.ready &&
-    base.mode === "supabase" &&
+    base.mode === "appwrite" &&
     userId &&
     base.state.users.some((user) => user.id === userId) &&
     circleId &&
@@ -51,7 +51,7 @@ export function useThemeWallpaper(theme?: CircleTheme): {
   });
 
   useEffect(() => {
-    if (!scope || !path || !supabase) {
+    if (!scope || !path) {
       setResolved({ scope: "", loading: false, error: null });
       return;
     }
@@ -63,26 +63,44 @@ export function useThemeWallpaper(theme?: CircleTheme): {
       const request = ++sequence;
       if (timer) clearTimeout(timer);
       try {
-        const { data, error } = await supabase!.storage
-          .from("circle-wallpapers")
-          .createSignedUrl(path, 60);
+        const data = await invokeCircle<{ url: string; expiresAt: number }>({
+          kind: "themeWallpaper",
+          wallpaperPath: path,
+        });
         if (!alive || request !== sequence) return;
-        if (error || !data?.signedUrl)
+        const configured = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
+        const imageUrl = new URL(data.url);
+        if (
+          !configured ||
+          imageUrl.protocol !== "https:" ||
+          imageUrl.origin !== new URL(configured).origin ||
+          !/\/storage\/buckets\/circle-wallpapers\/files\/[0-9a-f-]{36}\/view$/i.test(
+            imageUrl.pathname,
+          ) ||
+          !Number.isFinite(data.expiresAt) ||
+          data.expiresAt <= Date.now()
+        )
           throw new Error(
             "The wallpaper could not be loaded. Please try again.",
           );
         setResolved({
           scope,
-          uri: data.signedUrl,
-          expiresAt: Date.now() + 60_000,
+          uri: data.url,
+          expiresAt: Math.min(data.expiresAt, Date.now() + 60_000),
           loading: false,
           error: null,
         });
-        timer = setTimeout(() => void refresh(), 45_000);
+        timer = setTimeout(
+          () => void refresh(),
+          Math.max(
+            1_000,
+            Math.min(45_000, data.expiresAt - Date.now() - 15_000),
+          ),
+        );
       } catch {
         if (!alive || request !== sequence) return;
-        // Clear old URLs on any authorization or network failure. RLS remains
-        // authoritative even while the parent membership state is refreshing.
+        // Clear old URLs on any authorization or network failure. The Function
+        // remains authoritative while the parent membership state refreshes.
         setResolved({
           scope,
           loading: false,

@@ -32,10 +32,10 @@ export class ThemeGenerationError extends Error {
     let fallback = "Theme generation is unavailable. Please try again.";
     if (status === 401)
       fallback =
-        "Your sign-in expired or belongs to a different Supabase project. Sign out and back in, then try again.";
+        "Your Appwrite sign-in expired. Sign out and back in, then try again.";
     else if (status === 404)
       fallback =
-        "The generate-circle-theme function is not deployed in this Supabase project yet. Follow the OpenAI setup guide.";
+        "Circle’s Appwrite Function is not deployed or its function ID is incorrect. Follow the OpenAI setup guide.";
     else if (code === "theme_daily_limit")
       fallback =
         "You’ve reached your daily wallpaper generation limit. Try again when the daily allowance resets.";

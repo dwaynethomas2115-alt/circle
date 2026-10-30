@@ -227,7 +227,11 @@ test("AI wallpaper settings accept a combined prompt and preserve the saved them
   const aiRequests: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => {
-    if (/api\.openai\.com|\/storage\/v1\//.test(request.url()))
+    if (
+      /api\.openai\.com|\/functions\/|\/storage\/(?:v1\/|buckets\/)/.test(
+        request.url(),
+      )
+    )
       aiRequests.push(request.url());
   });
   const buttonColor = () =>

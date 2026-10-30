@@ -6,13 +6,17 @@ export function videoMediaIdentity(uri: string): string {
     // Only strip signing credentials on known signing schemes. Other query
     // values may identify a different movie or rendition and must be retained.
     const supabaseSigned = /\/storage\/v1\/object\/sign\//.test(url.pathname);
+    const appwriteSigned =
+      /^\/(?:v1\/)?storage\/buckets\/circle-media\/files\/[\w.-]+\/view$/.test(
+        url.pathname,
+      );
     const hasAwsSignature = url.searchParams.has("X-Amz-Signature");
     const hasGoogleSignature = url.searchParams.has("X-Goog-Signature");
     const hasCloudFrontSignature =
       url.searchParams.has("Signature") && url.searchParams.has("Key-Pair-Id");
     for (const key of [...url.searchParams.keys()]) {
       if (
-        (supabaseSigned && key === "token") ||
+        ((supabaseSigned || appwriteSigned) && key === "token") ||
         (hasAwsSignature && key.startsWith("X-Amz-")) ||
         (hasGoogleSignature && key.startsWith("X-Goog-")) ||
         (hasCloudFrontSignature &&

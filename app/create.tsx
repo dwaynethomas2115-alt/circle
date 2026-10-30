@@ -40,7 +40,7 @@ import {
   validateMedia,
   VIDEO_MAX_DURATION_MS,
 } from "../src/lib/media";
-import type { UploadProgress } from "../src/lib/resumableUpload";
+import type { UploadProgress } from "../src/lib/media";
 import { colors as c, font } from "../src/ui/theme";
 
 interface ChosenMedia {

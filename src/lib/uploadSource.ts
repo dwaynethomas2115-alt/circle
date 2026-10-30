@@ -1,6 +1,13 @@
 import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
-import type { UploadSource } from "./resumableUpload";
+export interface UploadSource {
+  size: number;
+  contentType?: string;
+  blob?: Blob;
+  uri?: string;
+  read(start: number, length: number): Promise<ArrayBuffer>;
+  close?(): Promise<void>;
+}
 
 /** Browser Blob slices and native disk slices keep large videos out of JS memory. */
 export async function openUploadSource(uri: string): Promise<UploadSource> {
@@ -13,6 +20,7 @@ export async function openUploadSource(uri: string): Promise<UploadSource> {
     const blob = await response.blob();
     return {
       size: blob.size,
+      blob,
       contentType:
         blob.type || response.headers.get("Content-Type") || undefined,
       read: (start, length) => blob.slice(start, start + length).arrayBuffer(),
@@ -36,6 +44,7 @@ export async function openUploadSource(uri: string): Promise<UploadSource> {
   }
   return {
     size: info.size,
+    uri: path,
     read: async (start, length) => {
       const encoded = await FileSystem.readAsStringAsync(path, {
         encoding: FileSystem.EncodingType.Base64,

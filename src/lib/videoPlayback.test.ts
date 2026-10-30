@@ -41,6 +41,48 @@ test("Supabase signed token rotation preserves movie identity without merging di
   );
 });
 
+test("Appwrite private media token rotation preserves identity and retains file, project, and rendition selectors", () => {
+  const base =
+    "https://cloud.appwrite.test/v1/storage/buckets/circle-media/files/44444444-4444-4444-8444-444444444444/view";
+  const current = `${base}?project=circle-project&token=current`;
+  assert.equal(
+    videoMediaIdentity(current),
+    videoMediaIdentity(`${base}?token=renewed&project=circle-project`),
+  );
+  assert.notEqual(
+    videoMediaIdentity(current),
+    videoMediaIdentity(`${base}?project=other-project&token=renewed`),
+  );
+  assert.notEqual(
+    videoMediaIdentity(current),
+    videoMediaIdentity(
+      `${base.replace("44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555")}?project=circle-project&token=renewed`,
+    ),
+  );
+  assert.notEqual(
+    videoMediaIdentity(`${current}&rendition=small`),
+    videoMediaIdentity(
+      `${base}?project=circle-project&token=renewed&rendition=large`,
+    ),
+  );
+  assert.notEqual(
+    videoMediaIdentity(current),
+    videoMediaIdentity(
+      `${base.replace("cloud.appwrite.test", "other.test")}?project=circle-project&token=renewed`,
+    ),
+  );
+  for (const otherPath of [
+    base.replace("circle-media", "other-bucket"),
+    base.replace("/view", "/download"),
+    base.replace("/v1/storage/", "/unrelated/storage/"),
+  ]) {
+    assert.notEqual(
+      videoMediaIdentity(`${otherPath}?project=circle-project&token=current`),
+      videoMediaIdentity(`${otherPath}?project=circle-project&token=renewed`),
+    );
+  }
+});
+
 test("known signed CDN credentials rotate while resource selectors remain distinct", () => {
   assert.equal(
     videoMediaIdentity(

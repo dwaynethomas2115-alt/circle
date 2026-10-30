@@ -1,0 +1,493 @@
+/** Actual handler/repository/domain with deterministic Appwrite and image-provider doubles. */
+import test from "node:test";
+import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import main, { type Context, type Dependencies } from "../function/index";
+import { AIError, type GeneratedWallpaper } from "../function/ai";
+import { execute, type Identity, type ThemeQuota } from "../function/domain";
+import { Repository, type Request } from "../function/repository";
+import { record, rowId } from "../function/records";
+import type { WallpaperServices } from "../function/wallpaper";
+import { FakeDatabase } from "./fake-database";
+import { presetThemes } from "../../src/features/themes";
+import type { CircleTheme } from "../../src/features/types";
+import type { Result } from "../../src/types";
+process.env.APPWRITE_FUNCTION_API_ENDPOINT = "https://appwrite.example.test/v1";
+process.env.APPWRITE_FUNCTION_PROJECT_ID = "test-project";
+process.env.CIRCLE_DATABASE_ID = "circle";
+process.env.OPENAI_API_KEY = "server-test-openai-key";
+const alice: Identity = {
+  $id: "alice",
+  name: "Alice",
+  email: "alice@example.test",
+};
+const bob: Identity = { $id: "bob", name: "Bob", email: "bob@example.test" };
+const admin: Identity = {
+  $id: "admin",
+  name: "Admin",
+  email: "admin@example.test",
+};
+const eve: Identity = { $id: "eve", name: "Eve", email: "eve@example.test" };
+interface Reply<T = unknown> {
+  status: number;
+  body: {
+    data?: T;
+    error?: string;
+    code?: string;
+    retryAfterSeconds?: number;
+    resetAt?: string;
+  };
+}
+function generated(id = "generated-wallpaper"): GeneratedWallpaper {
+  const image = Buffer.alloc(24);
+  image.write("RIFF", 0);
+  image.writeUInt32LE(16, 4);
+  image.write("WEBP", 8);
+  image.write("VP8 ", 12);
+  image.writeUInt32LE(4, 16);
+  return { theme: { ...presetThemes[1], id, source: "ai" }, image };
+}
+async function setup() {
+  const db = new FakeDatabase(),
+    repo = new Repository(db.api, "circle");
+  const mutate = async (who: Identity, request: Request) =>
+    repo.mutate(who, request, async (store) => execute(store, who, request));
+  const created = await mutate(alice, {
+    kind: "action",
+    action: {
+      type: "createCircle",
+      input: {
+        name: "Pink storms",
+        description: "",
+        category: "Friends",
+        discoverable: false,
+      },
+    },
+  });
+  const circleId = (created.data as Result).id!;
+  const stored = new Map<
+    string,
+    {
+      $id: string;
+      $permissions: string[];
+      mimeType: string;
+      sizeOriginal: number;
+      chunksUploaded: number;
+      chunksTotal: number;
+    }
+  >();
+  const storageCalls: { kind: string; fileId: string; bucketId: string }[] = [];
+  const tokenCalls: { fileId: string; bucketId: string; expire: string }[] = [];
+  const wallpaper = {
+    storage: {
+      createFile: async (args: {
+        fileId: string;
+        bucketId: string;
+        permissions: string[];
+      }) => {
+        storageCalls.push({
+          kind: "create",
+          fileId: args.fileId,
+          bucketId: args.bucketId,
+        });
+        assert.deepEqual(args.permissions, []);
+        const file = {
+          $id: args.fileId,
+          $permissions: [],
+          mimeType: "image/webp",
+          sizeOriginal: 24,
+          chunksUploaded: 1,
+          chunksTotal: 1,
+        };
+        stored.set(args.fileId, file);
+        return file;
+      },
+      getFile: async (args: { fileId: string; bucketId: string }) => {
+        storageCalls.push({
+          kind: "get",
+          fileId: args.fileId,
+          bucketId: args.bucketId,
+        });
+        const file = stored.get(args.fileId);
+        if (!file) throw Object.assign(new Error("missing"), { code: 404 });
+        return file;
+      },
+      deleteFile: async (args: { fileId: string; bucketId: string }) => {
+        storageCalls.push({
+          kind: "delete",
+          fileId: args.fileId,
+          bucketId: args.bucketId,
+        });
+        stored.delete(args.fileId);
+        return {};
+      },
+    },
+    tokens: {
+      createFileToken: async (args: {
+        fileId: string;
+        bucketId: string;
+        expire: string;
+      }) => {
+        tokenCalls.push(args);
+        return { secret: "private-short-lived-token" };
+      },
+    },
+  } as unknown as WallpaperServices;
+  let providerCalls = 0;
+  let provider: Dependencies["generateWallpaper"] = async () =>
+    generated(`generated-${providerCalls}`);
+  const run = async <T = unknown>(
+    who: Identity,
+    body: unknown,
+  ): Promise<Reply<T>> => {
+    const context: Context = {
+      req: {
+        bodyJson: body,
+        headers: {
+          "x-appwrite-user-jwt": "test-jwt",
+          "x-appwrite-key": "server-test-key",
+        },
+      },
+      res: { json: (value, status = 200) => ({ body: value, status }) },
+      error: () => {},
+    };
+    return (await main(context, {
+      db: db.api,
+      verifyIdentity: async () => who,
+      wallpaper,
+      generateWallpaper: async (...args) => {
+        providerCalls++;
+        return provider!(...args);
+      },
+    })) as Reply<T>;
+  };
+  const join = async (who: Identity, asAdmin = false) => {
+    const invitation = await mutate(alice, {
+      kind: "action",
+      action: { type: "createInvitation", circleId },
+    });
+    await mutate(who, {
+      kind: "action",
+      action: {
+        type: "redeemInvitation",
+        code: (invitation.data as Result).code!,
+      },
+    });
+    if (asAdmin)
+      await mutate(alice, {
+        kind: "action",
+        action: { type: "setRole", circleId, userId: who.$id, role: "admin" },
+      });
+  };
+  const quota = () =>
+    JSON.parse(
+      db.rows.get(`ai_quotas/${rowId(alice.$id)}`)!.data,
+    ) as ThemeQuota;
+  const setQuota = (value: ThemeQuota | number[]) => {
+    const entity = record("ai_quotas", alice.$id, value, "", alice.$id);
+    db.seed(entity.table, entity.id, entity.data);
+  };
+  return {
+    db,
+    repo,
+    mutate,
+    circleId,
+    stored,
+    storageCalls,
+    tokenCalls,
+    wallpaper,
+    run,
+    join,
+    quota,
+    setQuota,
+    get providerCalls() {
+      return providerCalls;
+    },
+    set provider(value: Dependencies["generateWallpaper"]) {
+      provider = value;
+    },
+  };
+}
+const request = (circleId: string) => ({
+  kind: "generateTheme",
+  circleId,
+  prompt: "Pink Barbies, tornadoes and volcanoes",
+});
+test("real Appwrite flow stores a private image and permits only requesting manager preview, then current members after apply", async () => {
+  const h = await setup();
+  await h.join(bob);
+  await h.join(admin, true);
+  const response = await h.run<CircleTheme>(alice, request(h.circleId));
+  assert.equal(response.status, 200);
+  const theme = response.body.data!;
+  assert.match(
+    theme.wallpaperPath!,
+    new RegExp(`^${h.circleId}/[a-f0-9-]{36}\\.webp$`),
+  );
+  const fileId = theme.wallpaperPath!.split("/")[1].replace(".webp", "");
+  assert.deepEqual(h.stored.get(fileId)?.$permissions, []);
+  assert.equal(h.providerCalls, 1);
+  assert.deepEqual(h.storageCalls, [
+    { kind: "create", bucketId: "circle-wallpapers", fileId },
+  ]);
+  assert.equal(h.quota().successes.length, 1);
+  assert.equal(h.quota().pending, undefined);
+  assert.ok(
+    [...h.db.rows.values()]
+      .filter((row) => row.scope_id === h.circleId)
+      .every((row) => row.$permissions.length === 0),
+  );
+  for (const who of [bob, admin, eve])
+    assert.notEqual(
+      (
+        await h.run(who, {
+          kind: "themeWallpaper",
+          wallpaperPath: theme.wallpaperPath,
+        })
+      ).status,
+      200,
+    );
+  assert.equal(h.tokenCalls.length, 0);
+  const preview = await h.run<{ url: string; expiresAt: number }>(alice, {
+    kind: "themeWallpaper",
+    wallpaperPath: theme.wallpaperPath,
+  });
+  assert.equal(preview.status, 200);
+  assert.match(
+    preview.body.data!.url,
+    /circle-wallpapers\/files\/.*token=private-short-lived-token/,
+  );
+  const remaining = preview.body.data!.expiresAt - Date.now();
+  assert.ok(remaining > 59000 && remaining <= 60000);
+  const applied = await h.run<Result>(alice, {
+    kind: "featureAction",
+    action: { type: "saveTheme", circleId: h.circleId, theme },
+  });
+  assert.equal(applied.body.data?.ok, true);
+  assert.equal(
+    (
+      await h.run(bob, {
+        kind: "themeWallpaper",
+        wallpaperPath: theme.wallpaperPath,
+      })
+    ).status,
+    200,
+  );
+  await h.mutate(alice, {
+    kind: "action",
+    action: { type: "removeMember", circleId: h.circleId, userId: bob.$id },
+  });
+  const tokenCount = h.tokenCalls.length;
+  assert.notEqual(
+    (
+      await h.run(bob, {
+        kind: "themeWallpaper",
+        wallpaperPath: theme.wallpaperPath,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(h.tokenCalls.length, tokenCount);
+});
+test("failed AI attempts release daily reservations while the three-per-minute retry guard remains accurate", async () => {
+  const h = await setup();
+  h.provider = async () => {
+    throw new AIError(
+      "Provider temporarily unavailable",
+      502,
+      "provider_unavailable",
+    );
+  };
+  for (let i = 0; i < 3; i++) {
+    const result = await h.run(alice, request(h.circleId));
+    assert.equal(result.status, 502);
+    assert.equal(result.body.code, "provider_unavailable");
+    assert.equal(h.quota().successes.length, 0);
+    assert.equal(h.quota().pending, undefined);
+  }
+  const denied = await h.run(alice, request(h.circleId));
+  assert.equal(denied.status, 429);
+  assert.equal(denied.body.code, "theme_burst_limit");
+  assert.ok(
+    denied.body.retryAfterSeconds! > 0 && denied.body.retryAfterSeconds! <= 60,
+  );
+  assert.equal(h.providerCalls, 3);
+  assert.equal(h.storageCalls.length, 0);
+});
+test("a pending generation prevents concurrent paid calls and finishes normally", async () => {
+  const h = await setup();
+  let started!: () => void, release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  h.provider = async () => {
+    started();
+    await waiting;
+    return generated();
+  };
+  const first = h.run(alice, request(h.circleId));
+  await entered;
+  const second = await h.run(alice, request(h.circleId));
+  assert.equal(second.status, 429);
+  assert.equal(second.body.code, "theme_in_progress");
+  assert.equal(h.providerCalls, 1);
+  release();
+  assert.equal((await first).status, 200);
+  assert.equal(h.quota().successes.length, 1);
+});
+test("rolling daily allowance defaults to fifty successes, reports its reset, and ignores old ten-attempt legacy daily rows", async () => {
+  const h = await setup(),
+    now = Date.now();
+  h.setQuota({
+    attempts: [],
+    successes: Array.from({ length: 49 }, (_, i) => ({
+      id: `success-${i}`,
+      at: now - 120000 - i * 1000,
+    })),
+  });
+  assert.equal((await h.run(alice, request(h.circleId))).status, 200);
+  assert.equal(h.quota().successes.length, 50);
+  const denied = await h.run(alice, request(h.circleId));
+  assert.equal(denied.status, 429);
+  assert.equal(denied.body.code, "theme_daily_limit");
+  assert.match(denied.body.error!, /50 wallpapers.*24 hours/);
+  assert.doesNotMatch(denied.body.error!, /minute/);
+  assert.ok(Date.parse(denied.body.resetAt!) > now);
+  assert.equal(h.providerCalls, 1);
+  h.setQuota(Array.from({ length: 10 }, (_, i) => now - 120000 - i * 1000));
+  assert.equal((await h.run(alice, request(h.circleId))).status, 200);
+  assert.equal(h.quota().successes.length, 1);
+  h.setQuota({
+    attempts: [],
+    successes: Array.from({ length: 50 }, (_, i) => ({
+      id: `expired-${i}`,
+      at: now - 25 * 3600000 - i,
+    })),
+  });
+  assert.equal((await h.run(alice, request(h.circleId))).status, 200);
+  assert.equal(h.quota().successes.length, 1);
+});
+test("server-configured daily allowance is enforced without the old wait-a-minute message", async () => {
+  const h = await setup(),
+    saved = process.env.THEME_DAILY_LIMIT;
+  try {
+    process.env.THEME_DAILY_LIMIT = "2";
+    assert.equal((await h.run(alice, request(h.circleId))).status, 200);
+    assert.equal((await h.run(alice, request(h.circleId))).status, 200);
+    const denied = await h.run(alice, request(h.circleId));
+    assert.equal(denied.status, 429);
+    assert.equal(denied.body.code, "theme_daily_limit");
+    assert.match(denied.body.error!, /2 wallpapers/);
+    assert.doesNotMatch(denied.body.error!, /minute/);
+    assert.equal(h.providerCalls, 2);
+  } finally {
+    if (saved === undefined) delete process.env.THEME_DAILY_LIMIT;
+    else process.env.THEME_DAILY_LIMIT = saved;
+  }
+});
+test("a completion transaction committed before its response was lost retains the image and confirms success without another provider call", async () => {
+  const h = await setup();
+  const original = h.db.updateTransaction.bind(h.db);
+  let lost = false;
+  h.db.updateTransaction = async (args) => {
+    const proposalCommit =
+      args.commit &&
+      [...h.db.transactions.get(args.transactionId)!.writes.keys()].some(
+        (key) => key.startsWith("ai_proposals/"),
+      );
+    const result = await original(args);
+    if (proposalCommit && !lost) {
+      lost = true;
+      throw new Error("Connection lost after commit");
+    }
+    return result;
+  };
+  const result = await h.run<CircleTheme>(alice, request(h.circleId));
+  assert.equal(result.status, 200);
+  assert.ok(lost);
+  assert.equal(h.providerCalls, 1);
+  assert.equal(h.quota().successes.length, 1);
+  assert.equal(h.quota().pending, undefined);
+  assert.equal(h.stored.size, 1);
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+});
+test("unknown completion status keeps a possibly committed private wallpaper and avoids a false daily-refund promise", async () => {
+  const h = await setup();
+  const original = h.db.updateTransaction.bind(h.db),
+    get = h.db.getRow.bind(h.db);
+  let lost = false;
+  h.db.updateTransaction = async (args) => {
+    const proposalCommit =
+      args.commit &&
+      [...h.db.transactions.get(args.transactionId)!.writes.keys()].some(
+        (key) => key.startsWith("ai_proposals/"),
+      );
+    const result = await original(args);
+    if (proposalCommit && !lost) {
+      lost = true;
+      throw new Error("Connection lost after commit");
+    }
+    return result;
+  };
+  h.db.getRow = async (args) => {
+    if (lost && args.tableId === "ai_proposals")
+      throw new Error("Database unavailable during confirmation");
+    return get(args);
+  };
+  const result = await h.run(alice, request(h.circleId));
+  assert.equal(result.status, 502);
+  assert.equal(result.body.code, "theme_completion_unconfirmed");
+  assert.match(result.body.error!, /may already count/);
+  assert.equal(h.providerCalls, 1);
+  assert.equal(h.stored.size, 1);
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+  assert.equal(h.quota().successes.length, 1);
+});
+
+test("definite storage failure and revoked manager access clean the uncommitted wallpaper and release its daily hold", async () => {
+  const storage = await setup();
+  storage.wallpaper.storage.createFile = async () => {
+    throw new Error("Storage quota exceeded");
+  };
+  const failed = await storage.run(alice, request(storage.circleId));
+  assert.equal(failed.status, 507);
+  assert.equal(failed.body.code, "storage_limit");
+  assert.equal(storage.quota().pending, undefined);
+  assert.equal(storage.quota().successes.length, 0);
+
+  const revoked = await setup();
+  revoked.provider = async () => {
+    const key = `members/${rowId(`${revoked.circleId}:${alice.$id}`)}`;
+    const row = revoked.db.rows.get(key)!;
+    const membership = { ...JSON.parse(row.data), role: "member" };
+    revoked.db.seed("members", row.$id, {
+      ...row,
+      data: JSON.stringify(membership),
+    });
+    return generated();
+  };
+  const denied = await revoked.run(alice, request(revoked.circleId));
+  assert.equal(denied.status, 403);
+  assert.equal(denied.body.code, "theme_permission_changed");
+  assert.equal(revoked.stored.size, 0);
+  assert.ok(revoked.storageCalls.some((call) => call.kind === "delete"));
+  assert.equal(revoked.quota().pending, undefined);
+  assert.equal(revoked.quota().successes.length, 0);
+});
+test("wallpaper signing refuses a changed public ACL and never returns a token for it", async () => {
+  const h = await setup();
+  const generated = await h.run<CircleTheme>(alice, request(h.circleId));
+  const theme = generated.body.data!;
+  const fileId = theme.wallpaperPath!.split("/")[1].replace(".webp", "");
+  h.stored.get(fileId)!.$permissions = ['read("any")'];
+  const response = await h.run(alice, {
+    kind: "themeWallpaper",
+    wallpaperPath: theme.wallpaperPath,
+  });
+  assert.equal(response.status, 503);
+  assert.equal(response.body.code, "wallpaper_unavailable");
+  assert.equal(h.tokenCalls.length, 0);
+});

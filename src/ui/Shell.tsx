@@ -365,7 +365,7 @@ function ThemedShell({
                   fontFamily: font.bold,
                 }}
               >
-                {mode === "supabase" ? "CONNECTED" : "LOCAL DEMO"}
+                {mode === "appwrite" ? "APPWRITE" : "LOCAL DEMO"}
               </T>
             </View>
             <View>
@@ -471,7 +471,7 @@ function ThemedShell({
           >
             <LockKeyhole size={11} color="#A8B3AA" />
             <T style={{ fontSize: 10, color: "#99A69C" }}>
-              {mode === "supabase"
+              {mode === "appwrite"
                 ? "Made for meaningful connections."
                 : "Interactive local demo · Sample people & data · No cloud privacy or multi-user chat"}
             </T>

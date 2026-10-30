@@ -184,7 +184,7 @@ function RemoteFeatures({ children }: { children: ReactNode }) {
 }
 export function CircleFeaturesProvider({ children }: { children: ReactNode }) {
   const { mode } = useCircle();
-  return mode === "supabase" ? (
+  return mode === "appwrite" ? (
     <RemoteFeatures>{children}</RemoteFeatures>
   ) : (
     <DemoFeatures>{children}</DemoFeatures>

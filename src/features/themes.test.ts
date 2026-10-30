@@ -73,6 +73,8 @@ test("wallpapers accept only private generated storage paths", () => {
     `//example.test/${wallpaperPath}`,
     `../${wallpaperPath}`,
     `${wallpaperPath}?token=secret`,
+    `${wallpaperPath}\n`,
+    `${wallpaperPath}\r\n`,
     `${circle}/../../private.webp`,
     `${circle}/${request}.svg`,
     "javascript:alert(1)",
@@ -95,6 +97,32 @@ test("wallpapers accept only private generated storage paths", () => {
     }),
     false,
   );
+});
+
+test("Appwrite Circle IDs keep their exact identity in private wallpaper paths", () => {
+  const circle = "circle-Anastasia_01";
+  const wallpaperPath = `${circle}/22222222-2222-4222-8222-222222222222.webp`;
+  assert.equal(wallpaperCircleId(wallpaperPath), circle);
+  assert.equal(
+    validateGeneratedWallpaper(
+      { ...defaultTheme, source: "ai", wallpaperPath },
+      circle,
+    ),
+    true,
+  );
+  assert.equal(
+    validateGeneratedWallpaper(
+      { ...defaultTheme, source: "ai", wallpaperPath },
+      circle.toLowerCase(),
+    ),
+    false,
+  );
+  for (const id of ["a".repeat(129), "a/b", "a.b", "a b", "a%2fb", ""]) {
+    assert.equal(
+      wallpaperCircleId(`${id}/22222222-2222-4222-8222-222222222222.webp`),
+      undefined,
+    );
+  }
 });
 
 test("wallpaper prompts keep combined interests beyond the previous 300 character cap", () => {

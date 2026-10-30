@@ -11,6 +11,16 @@ export function mediaMaxBytes(type: "image" | "video") {
   return type === "image" ? PHOTO_MAX_BYTES : VIDEO_MAX_BYTES;
 }
 
+export interface UploadProgress {
+  uploaded: number;
+  total: number;
+}
+export interface MediaUploadOptions {
+  mimeType?: string;
+  onProgress?: (progress: UploadProgress) => void;
+  signal?: AbortSignal;
+}
+
 export interface MediaDimensions {
   width: number;
   height: number;

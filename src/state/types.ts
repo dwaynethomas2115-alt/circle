@@ -71,5 +71,5 @@ export interface CircleContextValue {
   notifications: Notification[];
   actions: CircleActions;
   error?: string | null;
-  mode: "demo" | "supabase";
+  mode: "demo" | "appwrite";
 }
