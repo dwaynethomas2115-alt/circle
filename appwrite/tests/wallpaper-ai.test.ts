@@ -28,6 +28,7 @@ function harness({
   errorCode,
   paletteStatus = 200,
   imageHeaders = {},
+  failure,
 }: {
   paletteValue?: unknown;
   imageValue?: unknown;
@@ -35,6 +36,7 @@ function harness({
   errorCode?: string;
   paletteStatus?: number;
   imageHeaders?: Record<string, string>;
+  failure?: { stage: "palette" | "image"; response: Response };
 } = {}) {
   const calls: {
     url: string;
@@ -45,6 +47,15 @@ function harness({
     const url = String(target),
       body = JSON.parse(String(options.body));
     calls.push({ url, body, options });
+    if (
+      failure &&
+      url.endsWith(
+        failure.stage === "palette"
+          ? "/chat/completions"
+          : "/images/generations",
+      )
+    )
+      return failure.response;
     if (url.endsWith("/chat/completions"))
       return paletteStatus === 200
         ? json({
@@ -143,7 +154,7 @@ test("OpenAI API billing, capacity, key/model access, and prompt failures have d
   for (const [imageStatus, errorCode, status, code] of [
     [429, "insufficient_quota", 503, "provider_billing"],
     [429, "rate_limit_exceeded", 429, "provider_rate_limit"],
-    [403, "permission_denied", 503, "provider_configuration"],
+    [403, "permission_denied", 503, "provider_access"],
     [400, "content_policy_violation", 400, "provider_prompt"],
     [503, undefined, 502, "provider_unavailable"],
   ] as const) {
@@ -165,6 +176,190 @@ test("OpenAI API billing, capacity, key/model access, and prompt failures have d
         return true;
       },
     );
+  }
+});
+test("authentication, model access, and request errors identify the actual OpenAI stage without blaming the prompt", async () => {
+  for (const stage of ["palette", "image"] as const) {
+    for (const [httpStatus, providerCode, expectedCode] of [
+      [401, "invalid_api_key", "provider_authentication"],
+      [403, "permission_denied", "provider_access"],
+      [404, "model_not_found", "provider_model"],
+      [400, "model_not_found", "provider_model"],
+      [400, "unsupported_parameter", "provider_request"],
+      [422, "invalid_request_error", "provider_request"],
+    ] as const) {
+      const h = harness({
+        failure: {
+          stage,
+          response: json(
+            {
+              error: {
+                code: providerCode,
+                type: "invalid_request_error",
+                param: "response_format",
+                message: "Raw provider details must not reach the user.",
+              },
+            },
+            httpStatus,
+            { "x-request-id": `req_${stage}-fixture` },
+          ),
+        },
+      });
+      await assert.rejects(
+        generateTheme("A colorful garden", "test-server-key", h.transport),
+        (error: unknown) => {
+          assert.ok(error instanceof AIError);
+          assert.equal(error.status, 503);
+          assert.equal(error.code, expectedCode);
+          assert.notEqual(error.code, "provider_prompt");
+          assert.match(
+            error.message,
+            stage === "palette" ? /wallpaper color/i : /wallpaper image/i,
+          );
+          assert.equal(error.diagnostics?.stage, stage);
+          assert.equal(error.diagnostics?.httpStatus, httpStatus);
+          assert.equal(error.diagnostics?.requestId, `req_${stage}-fixture`);
+          assert.doesNotMatch(error.message, /Raw provider details/);
+          return true;
+        },
+      );
+      assert.equal(h.calls.length, stage === "palette" ? 1 : 2);
+    }
+  }
+});
+test("only explicit moderation failures ask for a different prompt, while billing and rate limits remain distinct at either stage", async () => {
+  for (const stage of ["palette", "image"] as const) {
+    for (const [httpStatus, providerCode, expectedStatus, expectedCode] of [
+      [400, "content_policy_violation", 400, "provider_prompt"],
+      [400, "moderation_blocked", 400, "provider_prompt"],
+      [400, "invalid_prompt", 400, "provider_prompt"],
+      [429, "insufficient_quota", 503, "provider_billing"],
+      [400, "billing_hard_limit_reached", 503, "provider_billing"],
+      [429, "rate_limit_exceeded", 429, "provider_rate_limit"],
+    ] as const) {
+      const h = harness({
+        failure: {
+          stage,
+          response: json({ error: { code: providerCode } }, httpStatus, {
+            "Retry-After": "17",
+          }),
+        },
+      });
+      await assert.rejects(
+        generateTheme("A colorful garden", "test-server-key", h.transport),
+        (error: unknown) => {
+          assert.ok(error instanceof AIError);
+          assert.equal(error.status, expectedStatus);
+          assert.equal(error.code, expectedCode);
+          assert.equal(error.diagnostics?.stage, stage);
+          if (expectedCode === "provider_rate_limit")
+            assert.equal(error.retryAfterSeconds, 17);
+          return true;
+        },
+      );
+      assert.equal(h.calls.length, stage === "palette" ? 1 : 2);
+    }
+  }
+});
+test("billing reported through error.type remains billing even when error.code is absent or unknown", async () => {
+  for (const stage of ["palette", "image"] as const) {
+    for (const detail of [
+      { type: "insufficient_quota" },
+      { code: null, type: "insufficient_quota" },
+      { code: "unknown-provider-code", type: "insufficient_quota" },
+    ]) {
+      const h = harness({
+        failure: {
+          stage,
+          response: json({ error: detail }, 429, { "Retry-After": "17" }),
+        },
+      });
+      await assert.rejects(
+        generateTheme("A colorful garden", "test-server-key", h.transport),
+        (error: unknown) => {
+          assert.ok(error instanceof AIError);
+          assert.equal(error.code, "provider_billing");
+          assert.equal(error.status, 503);
+          assert.equal(error.retryAfterSeconds, undefined);
+          assert.equal(error.diagnostics?.stage, stage);
+          assert.equal(error.diagnostics?.providerCode, "insufficient_quota");
+          assert.match(error.message, /separate from Circle/);
+          assert.doesNotMatch(JSON.stringify(error), /unknown-provider-code/);
+          return true;
+        },
+      );
+      assert.equal(h.calls.length, stage === "palette" ? 1 : 2);
+    }
+  }
+});
+test("provider diagnostics allow safe request references but never echo raw messages, arbitrary codes, parameters, or secrets", async () => {
+  const privateText = "sk-test-never-log-this-private-prompt";
+  for (const stage of ["palette", "image"] as const) {
+    for (const response of [
+      json(
+        {
+          error: {
+            code: privateText,
+            type: privateText,
+            param: privateText,
+            message: privateText,
+          },
+        },
+        400,
+        { "x-request-id": privateText },
+      ),
+      new Response(`<html>${privateText}</html>`, {
+        status: 401,
+        headers: {
+          "Content-Type": "text/html",
+          "x-request-id": `req_bad ${privateText}`,
+        },
+      }),
+    ]) {
+      const h = harness({ failure: { stage, response } });
+      await assert.rejects(
+        generateTheme("A colorful garden", privateText, h.transport),
+        (error: unknown) => {
+          assert.ok(error instanceof AIError);
+          assert.equal(error.diagnostics?.stage, stage);
+          assert.equal(error.diagnostics?.providerCode, undefined);
+          assert.equal(error.diagnostics?.requestId, undefined);
+          assert.ok(!JSON.stringify(error).includes(privateText));
+          assert.ok(!error.message.includes(privateText));
+          return true;
+        },
+      );
+    }
+  }
+});
+test("configured text and image models are preserved and failures never start a fallback model or automatic paid retry", async () => {
+  const priorText = process.env.OPENAI_THEME_MODEL,
+    priorImage = process.env.OPENAI_THEME_IMAGE_MODEL;
+  try {
+    process.env.OPENAI_THEME_MODEL = "configured-palette-model";
+    process.env.OPENAI_THEME_IMAGE_MODEL = "configured-image-model";
+    for (const stage of ["palette", "image"] as const) {
+      const h = harness({
+        failure: {
+          stage,
+          response: json({ error: { code: "model_not_found" } }, 404),
+        },
+      });
+      await assert.rejects(
+        generateTheme("A colorful garden", "test-server-key", h.transport),
+        (error: unknown) =>
+          error instanceof AIError && error.code === "provider_model",
+      );
+      assert.equal(h.calls.length, stage === "palette" ? 1 : 2);
+      assert.equal(h.calls[0].body.model, "configured-palette-model");
+      if (stage === "image")
+        assert.equal(h.calls[1].body.model, "configured-image-model");
+    }
+  } finally {
+    if (priorText === undefined) delete process.env.OPENAI_THEME_MODEL;
+    else process.env.OPENAI_THEME_MODEL = priorText;
+    if (priorImage === undefined) delete process.env.OPENAI_THEME_IMAGE_MODEL;
+    else process.env.OPENAI_THEME_IMAGE_MODEL = priorImage;
   }
 });
 test("prompt and server image quality validation happen before provider calls", async () => {
@@ -208,4 +403,35 @@ test("a 1,000 character description is preserved and network failures return saf
       error.code === "provider_unavailable" &&
       !error.message.includes("Internal request"),
   );
+});
+test("network failures report the interrupted stage without inventing an HTTP status or retrying generation", async () => {
+  for (const stage of ["palette", "image"] as const) {
+    const h = harness();
+    let calls = 0;
+    const transport: typeof fetch = async (target, options) => {
+      calls++;
+      if (
+        String(target).endsWith(
+          stage === "palette" ? "/chat/completions" : "/images/generations",
+        )
+      )
+        throw new Error("Sensitive transport details must not escape");
+      return h.transport(target, options);
+    };
+    await assert.rejects(
+      generateTheme("A colorful garden", "test-server-key", transport),
+      (error: unknown) => {
+        assert.ok(error instanceof AIError);
+        assert.equal(error.code, "provider_unavailable");
+        assert.equal(error.diagnostics?.stage, stage);
+        assert.equal(error.diagnostics?.httpStatus, undefined);
+        assert.doesNotMatch(
+          JSON.stringify(error),
+          /Sensitive transport details/,
+        );
+        return true;
+      },
+    );
+    assert.equal(calls, stage === "palette" ? 1 : 2);
+  }
 });

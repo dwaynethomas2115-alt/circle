@@ -1,10 +1,35 @@
 import { InputFile } from "node-appwrite/file";
-import type { Storage, Tokens } from "node-appwrite";
+import { Query, type Storage, type Tokens } from "node-appwrite";
 import { ThemeError } from "./domain";
 export const WALLPAPER_BUCKET = "circle-wallpapers";
 export interface WallpaperServices {
-  storage: Pick<Storage, "createFile" | "getFile" | "deleteFile">;
+  storage: Pick<Storage, "createFile" | "getFile" | "deleteFile" | "listFiles">;
   tokens: Pick<Tokens, "createFileToken">;
+}
+/** Read-only existence/access check before any chargeable generation work. */
+export async function assertWallpaperStorage(services: WallpaperServices) {
+  try {
+    const result = await services.storage.listFiles({
+      bucketId: WALLPAPER_BUCKET,
+      queries: [Query.limit(1)],
+      total: false,
+    });
+    if (!result || !Array.isArray(result.files))
+      throw new Error("Wallpaper storage did not return a file list.");
+  } catch (cause) {
+    const failure = cause as { code?: unknown; type?: unknown } | null;
+    if (failure?.code === 404 && failure.type === "storage_bucket_not_found")
+      throw new ThemeError(
+        "Wallpaper generation is paused because its private storage bucket is missing. The app owner can check the Appwrite storage setup.",
+        503,
+        "wallpaper_storage_missing",
+      );
+    throw new ThemeError(
+      "Wallpaper generation is paused because its private storage is unavailable. The app owner can check the Appwrite storage setup and Function access.",
+      503,
+      "wallpaper_storage_unavailable",
+    );
+  }
 }
 export async function storeWallpaper(
   services: WallpaperServices,

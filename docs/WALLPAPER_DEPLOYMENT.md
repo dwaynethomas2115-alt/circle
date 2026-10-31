@@ -8,9 +8,9 @@ The fix uses three authenticated operations: `prepareTheme` reserves a request w
 
 ## Latest reported deployment and blocker
 
-Dot's October 30 completion handoff confirmed active deployment **`6ae4c4c3e1e38ec870b5`** from commit **`30c28ff03e6373086af67fb2bd8742a47d423a47`**, with Node.js 22, entrypoint `main.js`, `npm ci --omit=dev`, and a 180-second timeout. This was a manual archive deployment; no GitHub integration or new credentials were granted. Existing variables, scopes and user-only execution permissions were retained.
+Dot's October 31 scrapbook handoff confirmed active deployment **`6ae59cd6da3487b42096`** from commit **`c6eb238efc0d6d2d5e0b772c03d30ec7d30c12da`**, replacing `6ae4c4c3e1e38ec870b5`. Saved settings remained Node.js 22, entrypoint `main.js`, `npm ci --omit=dev`, and a 180-second timeout. This was a manual archive deployment; no GitHub integration or new credentials were granted. Existing variables, scopes and user-only execution permissions were retained. That handoff also confirmed Vercel production on the matching `c6eb238` commit. These are reported hosted facts, not a fresh console inspection from this workspace.
 
-Wallpaper setup remains blocked: the Free Appwrite project allows one bucket, already used by `circle-media`, and the console could not create `circle-wallpapers`. Do not repeat that failed bucket-creation step or treat the function deployment as proof that generation works. A Free-plan storage redesign remains separate work requiring the user's approval. Vercel's current production commit and live generation were not verified in that handoff.
+Wallpaper setup remains blocked in the latest supplied evidence: the Free Appwrite project allows one bucket, already used by `circle-media`, and the console could not create `circle-wallpapers`. Do not repeat that failed bucket-creation step or treat the Function deployment as proof that generation works. A Free-plan storage redesign remains separate work requiring the user's approval. Hosted album flows and live wallpaper generation were not tested in that handoff. The current OpenAI access error has a separate [read-only diagnosis and Dot checklist](OPENAI_DIAGNOSIS.md).
 
 The following are reference settings for projects that can support the required private wallpaper bucket. They are not instructions to upgrade this project's plan or change its existing storage.
 
@@ -19,10 +19,10 @@ The following are reference settings for projects that can support the required 
 The earlier `dist/main.js`/60-second deployment was replaced by Dot's deployment above. Inspect the active deployment before changing settings.
 
 1. Open existing Appwrite project `6ae3ee7000368dcb80e7`, then **Functions → circle-api**. Its API endpoint is `https://fra.cloud.appwrite.io/v1`.
-2. Connect or update its Git deployment to repository `dwaynethomas2115-alt/circle`, branch `main`, root directory `appwrite/function`.
+2. For a separately authorized code deployment, use repository `dwaynethomas2115-alt/circle`, branch `main`, directory `appwrite/function`. Dot's existing manual archive method remains suitable; new Git integration or credentials are not required or authorized by this guide.
 3. Use **Node.js 22**, entrypoint **`main.js`**, build command **`npm ci --omit=dev`**, timeout **180 seconds**. Deploy the latest `main` containing this fix and its committed generated `appwrite/function/main.js`; wait until that deployment is ready and active.
 4. Preserve `CIRCLE_DATABASE_ID=circle`, the existing server-only OpenAI key, and the user's `OPENAI_THEME_MODEL=gpt-6-luna` setting. This fix does not require changing a model. Keep execute permission limited to signed-in users and dynamic key scopes `rows.read`, `rows.write`, `files.read`, `files.write`, `tokens.write`.
-5. Verify Storage bucket `circle-wallpapers` exists with file security enabled, no bucket permissions, allowed extension `webp`, and maximum size **10,485,760 bytes**. Create only this missing bucket if necessary; leave existing media limits, data, and permissions intact.
+5. Inspect whether bucket `circle-wallpapers` exists with the expected file security, empty bucket permissions, allowed extension `webp`, and maximum size **10,485,760 bytes**. In the current Free project it was absent because the one bucket is already occupied. Report that condition without creating a bucket or changing media limits, extensions, data, or permissions.
 6. Confirm the existing Vercel production deployment also includes the latest client fix. Vercel publishes the website; it does not deploy the Appwrite Function.
 
 The checked-in Function bundle is self-contained. No ZIP download or secret copied into Vercel is needed. The usual [Git deployment settings](VERCEL_SETUP.md#4-connect-the-existing-appwrite-function-to-github) apply.

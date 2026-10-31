@@ -1994,16 +1994,18 @@ async function hydrateMedia(app, services, store, endpoint, project2) {
 import { randomUUID as randomUUID2 } from "node:crypto";
 import { Buffer as Buffer2 } from "node:buffer";
 var AIError = class extends Error {
-  constructor(message, status, code, retryAfterSeconds) {
+  constructor(message, status, code, retryAfterSeconds, diagnostics) {
     super(message);
     this.status = status;
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.diagnostics = diagnostics;
     this.name = "AIError";
   }
   status;
   code;
   retryAfterSeconds;
+  diagnostics;
 };
 var MAX_IMAGE_BYTES = 10485760;
 var MAX_IMAGE_RESPONSE_BYTES = 16e6;
@@ -2036,6 +2038,8 @@ async function generateTheme(description, apiKey, transport = fetch) {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json"
   };
+  let stage = "palette";
+  let providerResponse;
   try {
     const response = await transport(
       "https://api.openai.com/v1/chat/completions",
@@ -2086,7 +2090,8 @@ async function generateTheme(description, apiKey, transport = fetch) {
         })
       }
     );
-    if (!response.ok) throw await providerError(response);
+    providerResponse = response;
+    if (!response.ok) throw await providerError(response, stage);
     const json = await response.json();
     let palette;
     try {
@@ -2111,6 +2116,8 @@ async function generateTheme(description, apiKey, transport = fetch) {
         502,
         "provider_palette"
       );
+    stage = "image";
+    providerResponse = void 0;
     const imageResponse = await transport(
       "https://api.openai.com/v1/images/generations",
       {
@@ -2129,7 +2136,8 @@ async function generateTheme(description, apiKey, transport = fetch) {
         })
       }
     );
-    if (!imageResponse.ok) throw await providerError(imageResponse);
+    providerResponse = imageResponse;
+    if (!imageResponse.ok) throw await providerError(imageResponse, stage);
     if (Number(imageResponse.headers.get("Content-Length")) > MAX_IMAGE_RESPONSE_BYTES)
       throw new AIError(
         "The generated wallpaper was too large. Please try again.",
@@ -2169,19 +2177,76 @@ async function generateTheme(description, apiKey, transport = fetch) {
       );
     return { theme: theme2, image };
   } catch (cause) {
-    if (cause instanceof AIError) throw cause;
+    if (cause instanceof AIError)
+      throw cause.diagnostics ? cause : new AIError(
+        cause.message,
+        cause.status,
+        cause.code,
+        cause.retryAfterSeconds,
+        providerDiagnostics(stage, providerResponse)
+      );
     throw new AIError(
-      "The AI wallpaper service could not finish. Your current theme is unchanged. Please try again.",
+      `The OpenAI ${stage === "palette" ? "wallpaper color" : "wallpaper image"} request could not finish. Your current theme is unchanged. Please try again.`,
       502,
-      "provider_unavailable"
+      "provider_unavailable",
+      void 0,
+      providerDiagnostics(stage, providerResponse)
     );
   }
 }
-async function providerError(response) {
+var knownProviderCodes = /* @__PURE__ */ new Set([
+  "invalid_api_key",
+  "invalid_authentication",
+  "account_deactivated",
+  "permission_denied",
+  "insufficient_permissions",
+  "organization_not_verified",
+  "verification_required",
+  "unsupported_country_region_territory",
+  "model_not_found",
+  "insufficient_quota",
+  "billing_hard_limit_reached",
+  "billing_not_active",
+  "billing_limit_reached",
+  "rate_limit_exceeded",
+  "content_policy_violation",
+  "moderation_blocked",
+  "invalid_prompt",
+  "unsupported_parameter",
+  "invalid_parameter",
+  "unsupported_value"
+]);
+function providerDiagnostics(stage, response, code) {
+  const requestId = response?.headers.get("x-request-id");
+  return {
+    stage,
+    ...response ? { httpStatus: response.status } : {},
+    ...requestId && /^req_[A-Za-z0-9_-]{1,160}$/.test(requestId) ? { requestId } : {},
+    ...code && knownProviderCodes.has(code) ? { providerCode: code } : {}
+  };
+}
+async function providerError(response, stage) {
   const detail = await response.json().catch(() => null);
-  if (detail?.error?.code === "insufficient_quota")
-    return new AIError(
-      "OpenAI API billing or its spending limit needs attention. The app owner can check the OpenAI dashboard. This is separate from Circle's wallpaper allowance.",
+  const rawCode = typeof detail?.error?.code === "string" ? detail.error.code : void 0;
+  const rawType = typeof detail?.error?.type === "string" ? detail.error.type : void 0;
+  const code = rawCode && knownProviderCodes.has(rawCode) ? rawCode : rawType && knownProviderCodes.has(rawType) ? rawType : void 0;
+  const diagnostics = providerDiagnostics(stage, response, code);
+  const request = stage === "palette" ? "wallpaper color" : "wallpaper image";
+  const failure = (message, status, kind, retry) => new AIError(message, status, kind, retry, diagnostics);
+  if (response.status === 401 || code === "invalid_api_key" || code === "invalid_authentication")
+    return failure(
+      `OpenAI could not authenticate the ${request} request. The app owner can check the existing server key and its OpenAI project.`,
+      503,
+      "provider_authentication"
+    );
+  if ([
+    "insufficient_quota",
+    "billing_hard_limit_reached",
+    "billing_not_active",
+    "billing_limit_reached"
+  ].includes(code || ""))
+    return failure(
+      `OpenAI API billing or its spending limit needs attention for the ${request} request. The app owner can check the OpenAI dashboard. This is separate from Circle's wallpaper allowance.`,
       503,
       "provider_billing"
     );
@@ -2190,27 +2255,50 @@ async function providerError(response) {
       3600,
       Math.max(1, Math.ceil(Number(response.headers.get("Retry-After")) || 60))
     );
-    return new AIError(
-      `OpenAI is temporarily busy. Try again in ${seconds} seconds.`,
+    return failure(
+      `OpenAI is temporarily busy with the ${request} request. Try again in ${seconds} seconds.`,
       429,
       "provider_rate_limit",
       seconds
     );
   }
-  if (response.status === 401 || response.status === 403)
-    return new AIError(
-      "The OpenAI API key or image-model access needs attention. The app owner can check the server setup and OpenAI dashboard.",
+  if (response.status === 404 || code === "model_not_found")
+    return failure(
+      `The configured OpenAI model for the ${request} request is unavailable or inaccessible. The app owner can check the configured model and project access.`,
       503,
-      "provider_configuration"
+      "provider_model"
     );
-  if (response.status === 400)
-    return new AIError(
-      "The image service could not use that description. Try rewording your wallpaper prompt.",
+  if ([
+    "content_policy_violation",
+    "moderation_blocked",
+    "invalid_prompt"
+  ].includes(code || ""))
+    return failure(
+      `OpenAI could not use that description for the ${request} request. Try rewording your wallpaper prompt.`,
       400,
       "provider_prompt"
     );
-  return new AIError(
-    "The AI service could not create your wallpaper. Your current theme is unchanged. Please try again.",
+  if (response.status === 403 || [
+    "permission_denied",
+    "insufficient_permissions",
+    "organization_not_verified",
+    "verification_required",
+    "unsupported_country_region_territory",
+    "account_deactivated"
+  ].includes(code || ""))
+    return failure(
+      `OpenAI denied access to the ${request} request. The app owner can check model access, project restrictions, and any verification requirement in the OpenAI dashboard.`,
+      503,
+      "provider_access"
+    );
+  if (response.status === 400 || response.status === 422)
+    return failure(
+      `OpenAI could not accept Circle's ${request} request settings. The app owner needs to check the configured model, endpoint, and supported options; changing your description may not resolve this.`,
+      503,
+      "provider_request"
+    );
+  return failure(
+    `The OpenAI ${request} request is temporarily unavailable. Your current theme is unchanged. Please try again.`,
     502,
     "provider_unavailable"
   );
@@ -2218,7 +2306,32 @@ async function providerError(response) {
 
 // appwrite/function/wallpaper.ts
 import { InputFile } from "node-appwrite/file";
+import { Query } from "node-appwrite";
 var WALLPAPER_BUCKET = "circle-wallpapers";
+async function assertWallpaperStorage(services) {
+  try {
+    const result = await services.storage.listFiles({
+      bucketId: WALLPAPER_BUCKET,
+      queries: [Query.limit(1)],
+      total: false
+    });
+    if (!result || !Array.isArray(result.files))
+      throw new Error("Wallpaper storage did not return a file list.");
+  } catch (cause) {
+    const failure = cause;
+    if (failure?.code === 404 && failure.type === "storage_bucket_not_found")
+      throw new ThemeError(
+        "Wallpaper generation is paused because its private storage bucket is missing. The app owner can check the Appwrite storage setup.",
+        503,
+        "wallpaper_storage_missing"
+      );
+    throw new ThemeError(
+      "Wallpaper generation is paused because its private storage is unavailable. The app owner can check the Appwrite storage setup and Function access.",
+      503,
+      "wallpaper_storage_unavailable"
+    );
+  }
+}
 async function storeWallpaper(services, fileId, image) {
   try {
     const file2 = await services.storage.createFile({
@@ -2262,7 +2375,7 @@ async function signWallpaper(services, fileId, endpoint, project2) {
 
 // appwrite/function/repository.ts
 import { randomUUID as randomUUID3, createHash as createHash3 } from "node:crypto";
-import { Query } from "node-appwrite";
+import { Query as Query2 } from "node-appwrite";
 
 // appwrite/function/records.ts
 import { createHash as createHash2 } from "node:crypto";
@@ -2560,12 +2673,12 @@ var Repository = class {
       let count = 0;
       do {
         const queries = [
-          Query.equal(column, values.slice(offset, offset + 50)),
+          Query2.equal(column, values.slice(offset, offset + 50)),
           ...extra,
-          Query.limit(limit ? Math.min(PAGE, limit - count) : PAGE),
-          limit ? Query.orderDesc("sort_at") : Query.orderAsc("$id")
+          Query2.limit(limit ? Math.min(PAGE, limit - count) : PAGE),
+          limit ? Query2.orderDesc("sort_at") : Query2.orderAsc("$id")
         ];
-        if (cursor) queries.push(Query.cursorAfter(cursor));
+        if (cursor) queries.push(Query2.cursorAfter(cursor));
         const page = await this.db.listRows({
           databaseId: this.databaseId,
           tableId: table,
@@ -2709,7 +2822,7 @@ var Repository = class {
             [identity.$id],
             transactionId,
             80,
-            [Query.equal("related_id", "unread")]
+            [Query2.equal("related_id", "unread")]
           )
         );
       if (type === "markCaughtUp")
@@ -2772,8 +2885,8 @@ var Repository = class {
           transactionId,
           11,
           [
-            Query.equal("related_id", "pending"),
-            Query.greaterThan(
+            Query2.equal("related_id", "pending"),
+            Query2.greaterThan(
               "sort_at",
               new Date(Date.now() - 864e5).toISOString()
             )
@@ -3027,6 +3140,7 @@ async function main({ req, res, error }, injected) {
       let completed = false, uncertainCompletion = false, uploadStarted = false;
       let failure;
       try {
+        await assertWallpaperStorage(wallpaper);
         if (!process.env.OPENAI_API_KEY)
           throw new ThemeError(
             "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",
@@ -3113,6 +3227,21 @@ async function main({ req, res, error }, injected) {
       ) : result.data
     });
   } catch (cause) {
+    if (cause instanceof AIError) {
+      const diagnostics = cause.diagnostics;
+      error(
+        JSON.stringify({
+          event: "wallpaper_provider_error",
+          code: cause.code,
+          ...diagnostics ? {
+            stage: diagnostics.stage,
+            ...diagnostics.httpStatus !== void 0 ? { httpStatus: diagnostics.httpStatus } : {},
+            ...diagnostics.requestId ? { requestId: diagnostics.requestId } : {},
+            ...diagnostics.providerCode ? { providerCode: diagnostics.providerCode } : {}
+          } : {}
+        })
+      );
+    }
     if (cause instanceof ThemeError || cause instanceof AIError)
       return res.json(
         {

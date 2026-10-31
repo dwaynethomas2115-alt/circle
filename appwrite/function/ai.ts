@@ -3,12 +3,20 @@ import { Buffer } from "node:buffer";
 import { validateTheme } from "../../src/features/themes";
 import type { CircleTheme } from "../../src/features/types";
 
+export type ProviderStage = "palette" | "image";
+export interface ProviderDiagnostics {
+  stage: ProviderStage;
+  httpStatus?: number;
+  requestId?: string;
+  providerCode?: string;
+}
 export class AIError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly code: string,
     readonly retryAfterSeconds?: number,
+    readonly diagnostics?: ProviderDiagnostics,
   ) {
     super(message);
     this.name = "AIError";
@@ -56,6 +64,8 @@ export async function generateTheme(
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
   };
+  let stage: ProviderStage = "palette";
+  let providerResponse: Response | undefined;
   try {
     const response = await transport(
       "https://api.openai.com/v1/chat/completions",
@@ -107,7 +117,8 @@ export async function generateTheme(
         }),
       },
     );
-    if (!response.ok) throw await providerError(response);
+    providerResponse = response;
+    if (!response.ok) throw await providerError(response, stage);
     const json = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
     };
@@ -140,6 +151,8 @@ export async function generateTheme(
         502,
         "provider_palette",
       );
+    stage = "image";
+    providerResponse = undefined;
     const imageResponse = await transport(
       "https://api.openai.com/v1/images/generations",
       {
@@ -158,7 +171,8 @@ export async function generateTheme(
         }),
       },
     );
-    if (!imageResponse.ok) throw await providerError(imageResponse);
+    providerResponse = imageResponse;
+    if (!imageResponse.ok) throw await providerError(imageResponse, stage);
     if (
       Number(imageResponse.headers.get("Content-Length")) >
       MAX_IMAGE_RESPONSE_BYTES
@@ -214,22 +228,110 @@ export async function generateTheme(
       );
     return { theme, image };
   } catch (cause) {
-    if (cause instanceof AIError) throw cause;
+    if (cause instanceof AIError)
+      throw cause.diagnostics
+        ? cause
+        : new AIError(
+            cause.message,
+            cause.status,
+            cause.code,
+            cause.retryAfterSeconds,
+            providerDiagnostics(stage, providerResponse),
+          );
     throw new AIError(
-      "The AI wallpaper service could not finish. Your current theme is unchanged. Please try again.",
+      `The OpenAI ${stage === "palette" ? "wallpaper color" : "wallpaper image"} request could not finish. Your current theme is unchanged. Please try again.`,
       502,
       "provider_unavailable",
+      undefined,
+      providerDiagnostics(stage, providerResponse),
     );
   }
 }
 
-async function providerError(response: Response): Promise<AIError> {
+// Keep raw provider messages out of responses, saved jobs, and execution logs:
+// OpenAI can include submitted prompts or key fragments in those messages.
+const knownProviderCodes = new Set([
+  "invalid_api_key",
+  "invalid_authentication",
+  "account_deactivated",
+  "permission_denied",
+  "insufficient_permissions",
+  "organization_not_verified",
+  "verification_required",
+  "unsupported_country_region_territory",
+  "model_not_found",
+  "insufficient_quota",
+  "billing_hard_limit_reached",
+  "billing_not_active",
+  "billing_limit_reached",
+  "rate_limit_exceeded",
+  "content_policy_violation",
+  "moderation_blocked",
+  "invalid_prompt",
+  "unsupported_parameter",
+  "invalid_parameter",
+  "unsupported_value",
+]);
+function providerDiagnostics(
+  stage: ProviderStage,
+  response?: Response,
+  code?: string,
+): ProviderDiagnostics {
+  const requestId = response?.headers.get("x-request-id");
+  return {
+    stage,
+    ...(response ? { httpStatus: response.status } : {}),
+    ...(requestId && /^req_[A-Za-z0-9_-]{1,160}$/.test(requestId)
+      ? { requestId }
+      : {}),
+    ...(code && knownProviderCodes.has(code) ? { providerCode: code } : {}),
+  };
+}
+async function providerError(
+  response: Response,
+  stage: ProviderStage,
+): Promise<AIError> {
   const detail = (await response.json().catch(() => null)) as {
-    error?: { code?: string };
+    error?: { code?: unknown; type?: unknown };
   } | null;
-  if (detail?.error?.code === "insufficient_quota")
-    return new AIError(
-      "OpenAI API billing or its spending limit needs attention. The app owner can check the OpenAI dashboard. This is separate from Circle's wallpaper allowance.",
+  const rawCode =
+    typeof detail?.error?.code === "string" ? detail.error.code : undefined;
+  const rawType =
+    typeof detail?.error?.type === "string" ? detail.error.type : undefined;
+  const code =
+    rawCode && knownProviderCodes.has(rawCode)
+      ? rawCode
+      : rawType && knownProviderCodes.has(rawType)
+        ? rawType
+        : undefined;
+  const diagnostics = providerDiagnostics(stage, response, code);
+  const request = stage === "palette" ? "wallpaper color" : "wallpaper image";
+  const failure = (
+    message: string,
+    status: number,
+    kind: string,
+    retry?: number,
+  ) => new AIError(message, status, kind, retry, diagnostics);
+  if (
+    response.status === 401 ||
+    code === "invalid_api_key" ||
+    code === "invalid_authentication"
+  )
+    return failure(
+      `OpenAI could not authenticate the ${request} request. The app owner can check the existing server key and its OpenAI project.`,
+      503,
+      "provider_authentication",
+    );
+  if (
+    [
+      "insufficient_quota",
+      "billing_hard_limit_reached",
+      "billing_not_active",
+      "billing_limit_reached",
+    ].includes(code || "")
+  )
+    return failure(
+      `OpenAI API billing or its spending limit needs attention for the ${request} request. The app owner can check the OpenAI dashboard. This is separate from Circle's wallpaper allowance.`,
       503,
       "provider_billing",
     );
@@ -238,27 +340,55 @@ async function providerError(response: Response): Promise<AIError> {
       3600,
       Math.max(1, Math.ceil(Number(response.headers.get("Retry-After")) || 60)),
     );
-    return new AIError(
-      `OpenAI is temporarily busy. Try again in ${seconds} seconds.`,
+    return failure(
+      `OpenAI is temporarily busy with the ${request} request. Try again in ${seconds} seconds.`,
       429,
       "provider_rate_limit",
       seconds,
     );
   }
-  if (response.status === 401 || response.status === 403)
-    return new AIError(
-      "The OpenAI API key or image-model access needs attention. The app owner can check the server setup and OpenAI dashboard.",
+  if (response.status === 404 || code === "model_not_found")
+    return failure(
+      `The configured OpenAI model for the ${request} request is unavailable or inaccessible. The app owner can check the configured model and project access.`,
       503,
-      "provider_configuration",
+      "provider_model",
     );
-  if (response.status === 400)
-    return new AIError(
-      "The image service could not use that description. Try rewording your wallpaper prompt.",
+  if (
+    [
+      "content_policy_violation",
+      "moderation_blocked",
+      "invalid_prompt",
+    ].includes(code || "")
+  )
+    return failure(
+      `OpenAI could not use that description for the ${request} request. Try rewording your wallpaper prompt.`,
       400,
       "provider_prompt",
     );
-  return new AIError(
-    "The AI service could not create your wallpaper. Your current theme is unchanged. Please try again.",
+  if (
+    response.status === 403 ||
+    [
+      "permission_denied",
+      "insufficient_permissions",
+      "organization_not_verified",
+      "verification_required",
+      "unsupported_country_region_territory",
+      "account_deactivated",
+    ].includes(code || "")
+  )
+    return failure(
+      `OpenAI denied access to the ${request} request. The app owner can check model access, project restrictions, and any verification requirement in the OpenAI dashboard.`,
+      503,
+      "provider_access",
+    );
+  if (response.status === 400 || response.status === 422)
+    return failure(
+      `OpenAI could not accept Circle's ${request} request settings. The app owner needs to check the configured model, endpoint, and supported options; changing your description may not resolve this.`,
+      503,
+      "provider_request",
+    );
+  return failure(
+    `The OpenAI ${request} request is temporarily unavailable. Your current theme is unchanged. Please try again.`,
     502,
     "provider_unavailable",
   );

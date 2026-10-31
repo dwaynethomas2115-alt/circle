@@ -87,9 +87,23 @@ async function setup() {
     }
   >();
   const storageCalls: { kind: string; fileId: string; bucketId: string }[] = [];
+  const storageChecks: {
+    bucketId: string;
+    queries?: string[];
+    total?: boolean;
+  }[] = [];
   const tokenCalls: { fileId: string; bucketId: string; expire: string }[] = [];
+  const errorLogs: string[] = [];
   const wallpaper = {
     storage: {
+      listFiles: async (args: {
+        bucketId: string;
+        queries?: string[];
+        total?: boolean;
+      }) => {
+        storageChecks.push(args);
+        return { files: [], total: 0 };
+      },
       createFile: async (args: {
         fileId: string;
         bucketId: string;
@@ -159,7 +173,9 @@ async function setup() {
         },
       },
       res: { json: (value, status = 200) => ({ body: value, status }) },
-      error: () => {},
+      error: (message) => {
+        errorLogs.push(message);
+      },
     };
     return (await main(context, {
       db: db.api,
@@ -224,7 +240,9 @@ async function setup() {
     circleId,
     stored,
     storageCalls,
+    storageChecks,
     tokenCalls,
+    errorLogs,
     wallpaper,
     run,
     raw,
@@ -258,6 +276,13 @@ test("real Appwrite flow stores a private image and permits only requesting mana
   const fileId = theme.wallpaperPath!.split("/")[1].replace(".webp", "");
   assert.deepEqual(h.stored.get(fileId)?.$permissions, []);
   assert.equal(h.providerCalls, 1);
+  assert.equal(h.storageChecks.length, 1);
+  assert.equal(h.storageChecks[0].bucketId, "circle-wallpapers");
+  assert.equal(h.storageChecks[0].total, false);
+  assert.deepEqual(
+    h.storageChecks[0].queries?.map((query) => JSON.parse(query)),
+    [{ method: "limit", values: [1] }],
+  );
   assert.deepEqual(h.storageCalls, [
     { kind: "create", bucketId: "circle-wallpapers", fileId },
   ]);
@@ -867,4 +892,162 @@ test("expired prepared jobs cannot execute paid work and uncertain claim commits
   assert.equal(uncertain.quota().job?.status, "processing");
   assert.equal((await uncertain.raw(alice, worker)).status, 200);
   assert.equal(uncertain.providerCalls, 0);
+});
+
+test("a missing wallpaper bucket stops generation before OpenAI, releases its hold, and saves a readable failure", async () => {
+  const h = await setup();
+  const prepared = await h.raw<{ requestId: string }>(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+  });
+  assert.equal(prepared.status, 200);
+  assert.equal(
+    h.storageChecks.length,
+    0,
+    "prepare does not probe before a guarded worker claim",
+  );
+  const requestId = prepared.body.data!.requestId;
+  h.wallpaper.storage.listFiles = async () => {
+    throw Object.assign(new Error("Private SDK response must not be shared"), {
+      code: 404,
+      type: "storage_bucket_not_found",
+    });
+  };
+  const failed = await h.raw(alice, { ...request(h.circleId), requestId });
+  assert.equal(failed.status, 503);
+  assert.equal(failed.body.code, "wallpaper_storage_missing");
+  assert.match(failed.body.error!, /private storage bucket is missing/);
+  assert.ok(!failed.body.error!.includes("Private SDK response"));
+  assert.equal(h.providerCalls, 0);
+  assert.equal(h.storageCalls.length, 0);
+  assert.equal(h.stored.size, 0);
+  assert.equal(h.tokenCalls.length, 0);
+  assert.equal(h.quota().pending, undefined);
+  assert.equal(h.quota().successes.length, 0);
+  const saved = await h.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: h.circleId,
+    requestId,
+  });
+  assert.deepEqual(saved.body.data, {
+    status: "failed",
+    error: failed.body.error,
+    code: "wallpaper_storage_missing",
+    responseStatus: 503,
+  });
+  assert.ok(
+    !h.errorLogs.some((entry) => entry.includes("wallpaper_provider_error")),
+  );
+});
+
+test("unavailable or denied wallpaper storage fails closed without falsely diagnosing a missing bucket", async () => {
+  for (const reason of [
+    { code: 403, type: "general_unauthorized_scope" },
+    { code: 404, type: "general_route_not_found" },
+    { code: 503, type: "general_server_error" },
+    {},
+  ]) {
+    const h = await setup();
+    h.wallpaper.storage.listFiles = async () => {
+      throw Object.assign(new Error("DO_NOT_LEAK_STORAGE_DETAILS"), reason);
+    };
+    const failed = await h.run(alice, request(h.circleId));
+    assert.equal(failed.status, 503);
+    assert.equal(failed.body.code, "wallpaper_storage_unavailable");
+    assert.ok(!failed.body.error!.includes("DO_NOT_LEAK_STORAGE_DETAILS"));
+    assert.ok(!failed.body.error!.includes("bucket is missing"));
+    assert.equal(h.providerCalls, 0);
+    assert.equal(h.storageCalls.length, 0);
+    assert.equal(h.quota().pending, undefined);
+    assert.equal(h.quota().successes.length, 0);
+  }
+});
+
+test("storage availability is checked only for an authorized manager's successfully claimed generation", async () => {
+  const h = await setup();
+  let probes = 0;
+  h.wallpaper.storage.listFiles = async () => {
+    probes++;
+    return { files: [], total: 0 };
+  };
+  assert.notEqual((await h.run(eve, request(h.circleId))).status, 200);
+  const invalidClaim = await h.raw(alice, {
+    ...request(h.circleId),
+    requestId: "00000000-0000-4000-8000-000000000000",
+  });
+  assert.notEqual(invalidClaim.status, 200);
+  await h.raw(alice, { kind: "snapshot" });
+  assert.equal(probes, 0);
+  assert.equal(h.providerCalls, 0);
+  const generated = await h.run(alice, request(h.circleId));
+  assert.equal(generated.status, 200);
+  assert.equal(probes, 1);
+  assert.equal(h.providerCalls, 1);
+});
+
+test("OpenAI failures log only safe diagnostic fields and do not expose diagnostics in the saved client response", async () => {
+  const h = await setup();
+  const safeMessage =
+    "The OpenAI image request is not permitted for this project.";
+  h.provider = async () => {
+    throw new AIError(safeMessage, 503, "provider_access", undefined, {
+      stage: "image",
+      httpStatus: 403,
+      requestId: "req_fixture123",
+      providerCode: "permission_denied",
+    });
+  };
+  const failed = await h.run(alice, request(h.circleId));
+  assert.deepEqual(failed.body, {
+    error: safeMessage,
+    code: "provider_access",
+  });
+  const diagnostics = h.errorLogs.map((entry) => JSON.parse(entry));
+  assert.deepEqual(diagnostics, [
+    {
+      event: "wallpaper_provider_error",
+      code: "provider_access",
+      stage: "image",
+      httpStatus: 403,
+      requestId: "req_fixture123",
+      providerCode: "permission_denied",
+    },
+  ]);
+  assert.ok(!h.errorLogs.join("\n").includes("server-test-openai-key"));
+  assert.ok(!h.errorLogs.join("\n").includes(request(h.circleId).prompt));
+  const result = await h.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: h.circleId,
+    requestId: h.quota().job!.requestId,
+  });
+  assert.deepEqual(result.body.data, {
+    status: "failed",
+    error: safeMessage,
+    code: "provider_access",
+    responseStatus: 503,
+  });
+});
+
+test("malformed storage availability responses fail closed before any OpenAI work", async () => {
+  for (const value of [
+    undefined,
+    null,
+    {},
+    { files: null },
+    { files: "invalid" },
+  ]) {
+    const h = await setup();
+    h.wallpaper.storage.listFiles = async () =>
+      value as unknown as Awaited<
+        ReturnType<WallpaperServices["storage"]["listFiles"]>
+      >;
+    const failed = await h.run(alice, request(h.circleId));
+    assert.equal(failed.status, 503);
+    assert.equal(failed.body.code, "wallpaper_storage_unavailable");
+    assert.equal(h.providerCalls, 0);
+    assert.equal(h.storageCalls.length, 0);
+    assert.equal(h.stored.size, 0);
+    assert.equal(h.quota().pending, undefined);
+    assert.equal(h.quota().successes.length, 0);
+  }
 });

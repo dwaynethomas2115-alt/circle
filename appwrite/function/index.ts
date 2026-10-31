@@ -14,6 +14,7 @@ import {
   storeWallpaper,
   signWallpaper,
   WALLPAPER_BUCKET,
+  assertWallpaperStorage,
   type WallpaperServices,
 } from "./wallpaper";
 import { Repository, type Database } from "./repository";
@@ -142,6 +143,9 @@ export default async function main(
         uploadStarted = false;
       let failure: ThemeFailure | undefined;
       try {
+        // Read-only check using existing file-read access; no paid provider work
+        // should start when its required wallpaper bucket cannot be reached.
+        await assertWallpaperStorage(wallpaper);
         if (!process.env.OPENAI_API_KEY)
           throw new ThemeError(
             "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",
@@ -242,6 +246,29 @@ export default async function main(
           : result.data,
     });
   } catch (cause) {
+    if (cause instanceof AIError) {
+      const diagnostics = cause.diagnostics;
+      error(
+        JSON.stringify({
+          event: "wallpaper_provider_error",
+          code: cause.code,
+          ...(diagnostics
+            ? {
+                stage: diagnostics.stage,
+                ...(diagnostics.httpStatus !== undefined
+                  ? { httpStatus: diagnostics.httpStatus }
+                  : {}),
+                ...(diagnostics.requestId
+                  ? { requestId: diagnostics.requestId }
+                  : {}),
+                ...(diagnostics.providerCode
+                  ? { providerCode: diagnostics.providerCode }
+                  : {}),
+              }
+            : {}),
+        }),
+      );
+    }
     if (cause instanceof ThemeError || cause instanceof AIError)
       return res.json(
         {
