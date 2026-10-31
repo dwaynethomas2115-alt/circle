@@ -28,7 +28,8 @@ export async function uploadFile(
     const preparedRequest = client.prepareRequest(
       method,
       new URL(url),
-      headers,
+      // The SDK's low-level request helper does not add the project header.
+      { ...headers, "X-Appwrite-Project": client.config.project },
       params,
     );
     const response = await fetch(preparedRequest.uri, {

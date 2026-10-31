@@ -39,6 +39,7 @@ export async function uploadFile(
       redirect: "error",
       headers: {
         ...nativeClient.getHeaders(),
+        "X-Appwrite-Project": nativeClient.config.project,
         Origin: `appwrite-${Platform.OS}://${nativeClient.config.platform}`,
         accept: "application/json",
         ...extraHeaders,
