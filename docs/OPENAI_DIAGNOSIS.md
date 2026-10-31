@@ -1,5 +1,7 @@
 # OpenAI wallpaper error: diagnosis and Dot handoff
 
+For the newer image-stage HTTP 400 on deployment `6ae5e308dbe2939faa49`, see [the October 31 image-request diagnosis](IMAGE_REQUEST_400.md). It includes current official model-retirement evidence and supersedes this document's historical image-default assumptions. The prepared logger additionally retains allowlisted `providerType` and option-name-only `providerParam`; raw messages and values remain excluded.
+
 This handoff covers the reported Circle message:
 
 > The OpenAI API key or image-model access needs attention. The app owner can check the server setup and OpenAI dashboard.

@@ -267,6 +267,12 @@ export default async function main(
                 ...(diagnostics.providerCode
                   ? { providerCode: diagnostics.providerCode }
                   : {}),
+                ...(diagnostics.providerType
+                  ? { providerType: diagnostics.providerType }
+                  : {}),
+                ...(diagnostics.providerParam
+                  ? { providerParam: diagnostics.providerParam }
+                  : {}),
               }
             : {}),
         }),

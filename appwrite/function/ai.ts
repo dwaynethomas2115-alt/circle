@@ -9,6 +9,8 @@ export interface ProviderDiagnostics {
   httpStatus?: number;
   requestId?: string;
   providerCode?: string;
+  providerType?: string;
+  providerParam?: string;
 }
 export class AIError extends Error {
   constructor(
@@ -28,6 +30,9 @@ export interface GeneratedWallpaper {
 }
 const MAX_IMAGE_BYTES = 10_485_760;
 const MAX_IMAGE_RESPONSE_BYTES = 16_000_000;
+// Official model lifecycle and request compatibility evidence:
+// docs/IMAGE_REQUEST_400.md. Never silently choose a replacement paid model.
+const retiredImageModels = new Set(["gpt-image-1", "dall-e-2", "dall-e-3"]);
 
 /** Only the caller's explicit visual prompt enters OpenAI; no community content. */
 export async function generateTheme(
@@ -47,6 +52,23 @@ export async function generateTheme(
       "AI wallpapers need a server-side OpenAI API key.",
       503,
       "provider_configuration",
+    );
+  const imageModel = process.env.OPENAI_THEME_IMAGE_MODEL;
+  if (!imageModel?.trim())
+    throw new AIError(
+      "Wallpaper generation needs an explicitly configured OpenAI image model. The previous default was retired; the app owner must select a supported model.",
+      503,
+      "provider_configuration",
+      undefined,
+      { stage: "image" },
+    );
+  if (retiredImageModels.has(imageModel.trim()))
+    throw new AIError(
+      "The configured wallpaper image model has been retired by OpenAI. The app owner must select a supported image model.",
+      503,
+      "provider_configuration",
+      undefined,
+      { stage: "image" },
     );
   const quality = process.env.OPENAI_THEME_IMAGE_QUALITY || "medium";
   if (!["low", "medium", "high"].includes(quality))
@@ -160,7 +182,7 @@ export async function generateTheme(
         headers,
         signal: timeout(90_000),
         body: JSON.stringify({
-          model: process.env.OPENAI_THEME_IMAGE_MODEL || "gpt-image-1",
+          model: imageModel,
           n: 1,
           size: "1536x1024",
           quality,
@@ -270,13 +292,44 @@ const knownProviderCodes = new Set([
   "moderation_blocked",
   "invalid_prompt",
   "unsupported_parameter",
+  "unknown_parameter",
   "invalid_parameter",
+  "invalid_value",
   "unsupported_value",
 ]);
+const knownProviderTypes = new Set([
+  "invalid_request_error",
+  "authentication_error",
+  "permission_error",
+  "rate_limit_error",
+  "server_error",
+  "api_error",
+]);
+// Record only fixed option names, never their values or arbitrary provider text.
+const knownProviderParams: Record<ProviderStage, Set<string>> = {
+  palette: new Set([
+    "model",
+    "max_completion_tokens",
+    "messages",
+    "response_format",
+  ]),
+  image: new Set([
+    "model",
+    "prompt",
+    "n",
+    "size",
+    "quality",
+    "output_format",
+    "output_compression",
+    "background",
+  ]),
+};
 function providerDiagnostics(
   stage: ProviderStage,
   response?: Response,
   code?: string,
+  type?: string,
+  param?: string,
 ): ProviderDiagnostics {
   const requestId = response?.headers.get("x-request-id");
   return {
@@ -286,6 +339,10 @@ function providerDiagnostics(
       ? { requestId }
       : {}),
     ...(code && knownProviderCodes.has(code) ? { providerCode: code } : {}),
+    ...(type && knownProviderTypes.has(type) ? { providerType: type } : {}),
+    ...(param && knownProviderParams[stage].has(param)
+      ? { providerParam: param }
+      : {}),
   };
 }
 async function providerError(
@@ -293,19 +350,27 @@ async function providerError(
   stage: ProviderStage,
 ): Promise<AIError> {
   const detail = (await response.json().catch(() => null)) as {
-    error?: { code?: unknown; type?: unknown };
+    error?: { code?: unknown; type?: unknown; param?: unknown };
   } | null;
   const rawCode =
     typeof detail?.error?.code === "string" ? detail.error.code : undefined;
   const rawType =
     typeof detail?.error?.type === "string" ? detail.error.type : undefined;
+  const rawParam =
+    typeof detail?.error?.param === "string" ? detail.error.param : undefined;
   const code =
     rawCode && knownProviderCodes.has(rawCode)
       ? rawCode
       : rawType && knownProviderCodes.has(rawType)
         ? rawType
         : undefined;
-  const diagnostics = providerDiagnostics(stage, response, code);
+  const diagnostics = providerDiagnostics(
+    stage,
+    response,
+    code,
+    rawType,
+    rawParam,
+  );
   const request = stage === "palette" ? "wallpaper color" : "wallpaper image";
   const failure = (
     message: string,

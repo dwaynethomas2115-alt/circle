@@ -1078,6 +1078,82 @@ test("OpenAI failures log only safe diagnostic fields and do not expose diagnost
   });
 });
 
+test("image request rejections keep safe provider type and parameter in logs only", async () => {
+  const h = await setup();
+  const safeMessage =
+    "OpenAI could not accept Circle's wallpaper image request settings. The app owner needs to check the configured model, endpoint, and supported options; changing your description may not resolve this.";
+  const privateText = "private-provider-message-never-log";
+  const providerDiagnostics = {
+    stage: "image" as const,
+    httpStatus: 400,
+    requestId: "req_image400fixture",
+    providerCode: "unknown_parameter",
+    providerType: "invalid_request_error",
+    providerParam: "output_format",
+    rawMessage: privateText,
+    rawMetadata: {
+      apiKey: "server-test-openai-key",
+      prompt: request(h.circleId).prompt,
+    },
+  };
+  h.provider = async () => {
+    throw new AIError(
+      safeMessage,
+      503,
+      "provider_request",
+      undefined,
+      providerDiagnostics,
+    );
+  };
+  const failed = await h.run(alice, request(h.circleId));
+  assert.equal(failed.status, 503);
+  assert.deepEqual(failed.body, {
+    error: safeMessage,
+    code: "provider_request",
+  });
+  assert.deepEqual(
+    h.errorLogs.map((entry) => JSON.parse(entry)),
+    [
+      {
+        event: "wallpaper_provider_error",
+        code: "provider_request",
+        stage: "image",
+        httpStatus: 400,
+        requestId: "req_image400fixture",
+        providerCode: "unknown_parameter",
+        providerType: "invalid_request_error",
+        providerParam: "output_format",
+      },
+    ],
+  );
+  const savedFailure = {
+    error: safeMessage,
+    code: "provider_request",
+    responseStatus: 503,
+  };
+  assert.deepEqual(h.quota().job!.failure, savedFailure);
+  assert.doesNotMatch(
+    JSON.stringify(h.quota().job),
+    /providerCode|providerType|providerParam|req_image400fixture|rawMessage|rawMetadata/,
+  );
+  const result = await h.raw<ThemeJobResult>(alice, {
+    kind: "themeResult",
+    circleId: h.circleId,
+    requestId: h.quota().job!.requestId,
+  });
+  assert.deepEqual(result.body.data, {
+    status: "failed",
+    ...savedFailure,
+  });
+  for (const privateValue of [
+    privateText,
+    "server-test-openai-key",
+    request(h.circleId).prompt,
+  ])
+    assert.ok(!h.errorLogs.join("\n").includes(privateValue));
+  assert.equal(h.providerCalls, 1);
+});
+
 test("malformed storage availability responses fail closed before any OpenAI work", async () => {
   for (const value of [
     undefined,

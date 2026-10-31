@@ -2025,6 +2025,7 @@ var AIError = class extends Error {
 };
 var MAX_IMAGE_BYTES = 10485760;
 var MAX_IMAGE_RESPONSE_BYTES = 16e6;
+var retiredImageModels = /* @__PURE__ */ new Set(["gpt-image-1", "dall-e-2", "dall-e-3"]);
 async function generateTheme(description, apiKey, transport = fetch) {
   const prompt = description.trim();
   if (prompt.length < 3 || prompt.length > 1e3)
@@ -2038,6 +2039,23 @@ async function generateTheme(description, apiKey, transport = fetch) {
       "AI wallpapers need a server-side OpenAI API key.",
       503,
       "provider_configuration"
+    );
+  const imageModel = process.env.OPENAI_THEME_IMAGE_MODEL;
+  if (!imageModel?.trim())
+    throw new AIError(
+      "Wallpaper generation needs an explicitly configured OpenAI image model. The previous default was retired; the app owner must select a supported model.",
+      503,
+      "provider_configuration",
+      void 0,
+      { stage: "image" }
+    );
+  if (retiredImageModels.has(imageModel.trim()))
+    throw new AIError(
+      "The configured wallpaper image model has been retired by OpenAI. The app owner must select a supported image model.",
+      503,
+      "provider_configuration",
+      void 0,
+      { stage: "image" }
     );
   const quality = process.env.OPENAI_THEME_IMAGE_QUALITY || "medium";
   if (!["low", "medium", "high"].includes(quality))
@@ -2141,7 +2159,7 @@ async function generateTheme(description, apiKey, transport = fetch) {
         headers,
         signal: timeout(9e4),
         body: JSON.stringify({
-          model: process.env.OPENAI_THEME_IMAGE_MODEL || "gpt-image-1",
+          model: imageModel,
           n: 1,
           size: "1536x1024",
           quality,
@@ -2229,24 +2247,61 @@ var knownProviderCodes = /* @__PURE__ */ new Set([
   "moderation_blocked",
   "invalid_prompt",
   "unsupported_parameter",
+  "unknown_parameter",
   "invalid_parameter",
+  "invalid_value",
   "unsupported_value"
 ]);
-function providerDiagnostics(stage, response, code) {
+var knownProviderTypes = /* @__PURE__ */ new Set([
+  "invalid_request_error",
+  "authentication_error",
+  "permission_error",
+  "rate_limit_error",
+  "server_error",
+  "api_error"
+]);
+var knownProviderParams = {
+  palette: /* @__PURE__ */ new Set([
+    "model",
+    "max_completion_tokens",
+    "messages",
+    "response_format"
+  ]),
+  image: /* @__PURE__ */ new Set([
+    "model",
+    "prompt",
+    "n",
+    "size",
+    "quality",
+    "output_format",
+    "output_compression",
+    "background"
+  ])
+};
+function providerDiagnostics(stage, response, code, type, param) {
   const requestId = response?.headers.get("x-request-id");
   return {
     stage,
     ...response ? { httpStatus: response.status } : {},
     ...requestId && /^req_[A-Za-z0-9_-]{1,160}$/.test(requestId) ? { requestId } : {},
-    ...code && knownProviderCodes.has(code) ? { providerCode: code } : {}
+    ...code && knownProviderCodes.has(code) ? { providerCode: code } : {},
+    ...type && knownProviderTypes.has(type) ? { providerType: type } : {},
+    ...param && knownProviderParams[stage].has(param) ? { providerParam: param } : {}
   };
 }
 async function providerError(response, stage) {
   const detail = await response.json().catch(() => null);
   const rawCode = typeof detail?.error?.code === "string" ? detail.error.code : void 0;
   const rawType = typeof detail?.error?.type === "string" ? detail.error.type : void 0;
+  const rawParam = typeof detail?.error?.param === "string" ? detail.error.param : void 0;
   const code = rawCode && knownProviderCodes.has(rawCode) ? rawCode : rawType && knownProviderCodes.has(rawType) ? rawType : void 0;
-  const diagnostics = providerDiagnostics(stage, response, code);
+  const diagnostics = providerDiagnostics(
+    stage,
+    response,
+    code,
+    rawType,
+    rawParam
+  );
   const request = stage === "palette" ? "wallpaper color" : "wallpaper image";
   const failure = (message, status, kind, retry) => new AIError(message, status, kind, retry, diagnostics);
   if (response.status === 401 || code === "invalid_api_key" || code === "invalid_authentication")
@@ -3317,7 +3372,9 @@ async function main({ req, res, error }, injected) {
             stage: diagnostics.stage,
             ...diagnostics.httpStatus !== void 0 ? { httpStatus: diagnostics.httpStatus } : {},
             ...diagnostics.requestId ? { requestId: diagnostics.requestId } : {},
-            ...diagnostics.providerCode ? { providerCode: diagnostics.providerCode } : {}
+            ...diagnostics.providerCode ? { providerCode: diagnostics.providerCode } : {},
+            ...diagnostics.providerType ? { providerType: diagnostics.providerType } : {},
+            ...diagnostics.providerParam ? { providerParam: diagnostics.providerParam } : {}
           } : {}
         })
       );

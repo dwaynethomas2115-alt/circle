@@ -193,7 +193,13 @@ test("AI quota, role checks and signed-in proposal provenance are server enforce
     /access changed/,
   );
 });
-test("AI sends only explicit prompt, validates response and rejects unsafe palettes", async () => {
+test("AI sends only explicit prompt, validates response and rejects unsafe palettes", async (t) => {
+  const priorModel = process.env.OPENAI_THEME_IMAGE_MODEL;
+  process.env.OPENAI_THEME_IMAGE_MODEL = "gpt-image-2.5-sunburst";
+  t.after(() => {
+    if (priorModel === undefined) delete process.env.OPENAI_THEME_IMAGE_MODEL;
+    else process.env.OPENAI_THEME_IMAGE_MODEL = priorModel;
+  });
   const { label, accent, background, surface, ink, motif } = presetThemes[0];
   const palette = { label, accent, background, surface, ink, motif };
   const transport: typeof fetch = async (url, options) => {

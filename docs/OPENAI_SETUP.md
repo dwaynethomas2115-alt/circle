@@ -1,13 +1,15 @@
 # AI wallpapers with Appwrite
 
+October 31 image-request follow-up: the deployed source's `gpt-image-1` default is retired. The prepared local fix requires an explicit supported `OPENAI_THEME_IMAGE_MODEL` before either AI request, without choosing one automatically. See [the current evidence and approval-dependent next steps](IMAGE_REQUEST_400.md). No replacement model or deployment has been authorized by this diagnosis.
+
 Circle uses your existing Appwrite project. A Circle owner or admin describes everyone's interests in one prompt, and OpenAI generates a colorful illustrated wallpaper combining those subjects. For example: “Anastasia loves pink and Barbie, and Daelin loves tornadoes and volcanoes. Make it bright and playful.” The app previews the image before you apply it.
 
-Dwayne approved sharing the existing `circle-media` bucket. New wallpapers use JPEG, which its existing extension list already accepts. The [shared storage deployment handoff](SHARED_WALLPAPER_STORAGE.md) replaces the earlier second-bucket requirement; no bucket, extension, permission, or plan change is needed. The new server and client code still need matching deployments. OpenAI key/model access remains a separate [read-only diagnosis](OPENAI_DIAGNOSIS.md), and no paid generation test is authorized here.
+Dwayne approved sharing the existing `circle-media` bucket. New wallpapers use JPEG, which its existing extension list already accepts. The [shared storage deployment handoff](SHARED_WALLPAPER_STORAGE.md) replaces the earlier second-bucket requirement; no bucket, extension, permission, or plan change is needed. Dot reports matching shared-bucket server and client deployments from `1060661`. The newly prepared image-model validation and diagnostics fix is local only. No paid generation test is authorized here.
 
 ## Connect the existing Function
 
 1. Open your Appwrite project, then **Functions → circle-api**. Keep its existing database, users, variables and permissions.
-2. Inspect the active Function deployment. Dot last confirmed deployment `6ae5c5f6876bd6211b25` from `b9ed85b` on October 31, 2026 at 10:43 UTC. That version predates the shared-bucket JPEG update. Its entrypoint is `main.js`, runtime Node.js 22, build command `npm ci --omit=dev`, and timeout **180 seconds**. The committed `main.js` is already bundled from source. Dot's one-time manual archive deployment remains suitable for separately authorized code updates; [Git deployment](VERCEL_SETUP.md) is optional and was not granted in the last handoff.
+2. Inspect the active Function deployment. Dot last reported deployment `6ae5e308dbe2939faa49` from `1060661` on October 31, 2026 at 12:46 UTC, preserving source after Dwayne saved the existing secret. It includes the shared-bucket JPEG path, but predates this image-model validation fix. Its entrypoint is `main.js`, runtime Node.js 22, build command `npm ci --omit=dev`, and timeout **180 seconds**. The committed `main.js` is bundled from source. Dot's one-time manual archive deployment remains suitable for separately authorized code updates; [Git deployment](VERCEL_SETUP.md) is optional and was not granted in the last handoff.
 3. Keep execution restricted to signed-in users. Retain the existing dynamic key scopes: `rows.read`, `rows.write`, `files.read`, `files.write`, and `tokens.write`.
 4. Inspect the existing **`circle-media`** bucket. Keep file security on, bucket permission **create(users)** only, extensions **`jpg`, `mp4`, `mov`**, and the existing file-size ceiling. New server-created JPEG wallpapers have empty file permissions, use `wp_` file IDs, and are limited by the app to 10 MiB. Do not create a second bucket, alter permissions/extensions, move files, run provisioning, or upgrade the plan. Legacy WebP paths can still read an existing old wallpaper bucket without creating one.
 
@@ -15,20 +17,20 @@ The existing 25-table database stays in place. Quota JSON records are read compa
 
 ## Inspect OpenAI in Appwrite
 
-1. Identify the OpenAI API project associated with the existing key, using dashboard metadata or the owner's records. Inspect access to both configured models and their endpoint/request-format compatibility. `gpt-4.1-mini` is only the palette source default; the user's last reported setting is `OPENAI_THEME_MODEL=gpt-6-luna`. Preserve that choice. Its availability and compatibility have not been verified here. `gpt-image-1` is only the image source default when its variable is unset or empty. API billing is separate from a ChatGPT subscription, and image access may be subject to organization verification.
+1. Identify the OpenAI API project associated with the existing key, using dashboard metadata or the owner's records. Inspect access to both configured models and their endpoint/request-format compatibility. `gpt-4.1-mini` is only the palette source default; the user's last reported setting is `OPENAI_THEME_MODEL=gpt-6-luna`. Preserve that choice. The supplied execution reached the image stage, but end-to-end generation remains unverified. `gpt-image-1` was the image source default and was retired October 23, 2026; the prepared fix removes that default and requires an explicit supported image model. API billing is separate from a ChatGPT subscription, and image access may be subject to organization verification.
 2. In **circle-api → Variables**, confirm **`OPENAI_API_KEY`** is present and marked Secret without revealing or changing its value. Presence does not prove validity or model access.
 3. Confirm `CIRCLE_DATABASE_ID` remains your existing database ID, normally `circle`. Read the non-secret model IDs and image-quality value if set; do not change them during diagnosis.
 4. Record findings and required setup actions for separate authorization. No new key, permission change, credit purchase, billing-limit change, model fallback, generation test, or Function deployment is part of this read-only inspection.
 
-Optional server variables:
+Server variables (the image model is required for generation after the prepared fix):
 
-| Variable                     | Default        | Purpose                                                  |
-| ---------------------------- | -------------- | -------------------------------------------------------- |
-| `OPENAI_THEME_MODEL`         | `gpt-4.1-mini` | Matching accessible interface colors.                    |
-| `OPENAI_THEME_IMAGE_MODEL`   | `gpt-image-1`  | Images API model supporting JPEG output.                 |
-| `OPENAI_THEME_IMAGE_QUALITY` | `medium`       | `low`, `medium`, or `high`; affects image cost and time. |
-| `THEME_DAILY_LIMIT`          | `50`           | Successful wallpapers per account in a rolling 24 hours. |
-| `THEME_BURST_LIMIT`          | `3`            | Generation attempts per account per minute.              |
+| Variable                     | Default        | Purpose                                                                        |
+| ---------------------------- | -------------- | ------------------------------------------------------------------------------ |
+| `OPENAI_THEME_MODEL`         | `gpt-4.1-mini` | Matching accessible interface colors.                                          |
+| `OPENAI_THEME_IMAGE_MODEL`   | None           | Explicit supported Images API model with JPEG output; requires owner approval. |
+| `OPENAI_THEME_IMAGE_QUALITY` | `medium`       | `low`, `medium`, or `high`; affects image cost and time.                       |
+| `THEME_DAILY_LIMIT`          | `50`           | Successful wallpapers per account in a rolling 24 hours.                       |
+| `THEME_BURST_LIMIT`          | `3`            | Generation attempts per account per minute.                                    |
 
 OpenAI and Appwrite API keys belong in server secrets. Vercel's `EXPO_PUBLIC_APPWRITE_*` settings contain only the public endpoint, project ID and Function ID. Never put the OpenAI key in an `EXPO_PUBLIC_*` variable.
 

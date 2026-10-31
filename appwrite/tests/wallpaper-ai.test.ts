@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
@@ -11,6 +11,27 @@ const image = readFileSync(
   new NodeURL("../../assets/photos/avatar-alex.jpg", import.meta.url),
 );
 const encoded = image.toString("base64");
+const supportedImageModel = "gpt-image-2.5-sunburst";
+const modelSettings = [
+  "OPENAI_THEME_MODEL",
+  "OPENAI_THEME_IMAGE_MODEL",
+  "OPENAI_THEME_IMAGE_QUALITY",
+] as const;
+let priorSettings: (string | undefined)[];
+beforeEach(() => {
+  priorSettings = modelSettings.map((name) => process.env[name]);
+  // Test process only: every provider request uses the injected fake transport.
+  process.env.OPENAI_THEME_MODEL = "gpt-6-luna";
+  process.env.OPENAI_THEME_IMAGE_MODEL = supportedImageModel;
+  delete process.env.OPENAI_THEME_IMAGE_QUALITY;
+});
+afterEach(() => {
+  modelSettings.forEach((name, index) => {
+    const value = priorSettings[index];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  });
+});
 const json = (
   value: unknown,
   status = 200,
@@ -88,12 +109,24 @@ test("AI wallpaper combines every requested interest and sends only explicit vis
   });
   assert.equal(h.calls[0].body.messages.length, 2);
   const request = h.calls[1].body;
-  assert.equal(request.model, "gpt-image-1");
+  assert.equal(h.calls[0].body.model, "gpt-6-luna");
+  assert.equal(request.model, supportedImageModel);
   assert.equal(request.size, "1536x1024");
   assert.equal(request.output_format, "jpeg");
   assert.equal(request.output_compression, 85);
   assert.equal(request.quality, "medium");
   assert.equal(request.n, 1);
+  assert.equal(request.background, "opaque");
+  assert.equal(
+    request.response_format,
+    undefined,
+    "GPT Image returns base64 without the unsupported legacy response_format option",
+  );
+  assert.equal(
+    request.style,
+    undefined,
+    "style belongs in the prompt rather than the retired DALL-E option",
+  );
   assert.match(
     request.prompt,
     /ALL requested interests and ALL requested subjects/,
@@ -328,6 +361,8 @@ test("provider diagnostics allow safe request references but never echo raw mess
           assert.ok(error instanceof AIError);
           assert.equal(error.diagnostics?.stage, stage);
           assert.equal(error.diagnostics?.providerCode, undefined);
+          assert.equal(error.diagnostics?.providerType, undefined);
+          assert.equal(error.diagnostics?.providerParam, undefined);
           assert.equal(error.diagnostics?.requestId, undefined);
           assert.ok(!JSON.stringify(error).includes(privateText));
           assert.ok(!error.message.includes(privateText));
@@ -335,6 +370,113 @@ test("provider diagnostics allow safe request references but never echo raw mess
         },
       );
     }
+  }
+});
+test("image request diagnostics retain only safe option names and distinct error identifiers", async () => {
+  for (const [providerCode, providerParam] of [
+    [null, "output_format"],
+    ["unknown_parameter", "output_compression"],
+    ["invalid_value", "quality"],
+    ["unsupported_value", "model"],
+  ] as const) {
+    const h = harness({
+      failure: {
+        stage: "image",
+        response: json(
+          {
+            error: {
+              code: providerCode,
+              type: "invalid_request_error",
+              param: providerParam,
+              message: "Never log this private prompt or key fragment",
+            },
+          },
+          400,
+          { "x-request-id": "req_image400fixture" },
+        ),
+      },
+    });
+    await assert.rejects(
+      generateTheme("A colorful garden", "dummy-key", h.transport),
+      (error: unknown) => {
+        assert.ok(error instanceof AIError);
+        assert.equal(error.code, "provider_request");
+        assert.deepEqual(error.diagnostics, {
+          stage: "image",
+          httpStatus: 400,
+          requestId: "req_image400fixture",
+          ...(providerCode ? { providerCode } : {}),
+          providerType: "invalid_request_error",
+          providerParam,
+        });
+        assert.doesNotMatch(JSON.stringify(error), /private prompt|dummy-key/);
+        return true;
+      },
+    );
+    assert.equal(
+      h.calls.length,
+      2,
+      "rejection must not retry or use a fallback",
+    );
+  }
+  for (const param of [
+    "response_format",
+    "output_format.secret-value",
+    { name: "quality" },
+    null,
+  ]) {
+    const h = harness({
+      failure: {
+        stage: "image",
+        response: json(
+          {
+            error: { code: null, type: "invalid_request_error", param },
+          },
+          400,
+        ),
+      },
+    });
+    await assert.rejects(
+      generateTheme("A colorful garden", "dummy-key", h.transport),
+      (error: unknown) => {
+        assert.ok(error instanceof AIError);
+        assert.equal(error.diagnostics?.providerParam, undefined);
+        return true;
+      },
+    );
+  }
+});
+test("missing or officially retired image models stop before even the palette request without selecting a replacement", async () => {
+  for (const model of [
+    undefined,
+    "",
+    "  ",
+    "gpt-image-1",
+    "dall-e-2",
+    "dall-e-3",
+  ]) {
+    if (model === undefined) delete process.env.OPENAI_THEME_IMAGE_MODEL;
+    else process.env.OPENAI_THEME_IMAGE_MODEL = model;
+    const h = harness();
+    await assert.rejects(
+      generateTheme("A colorful garden", "dummy-key", h.transport),
+      (error: unknown) => {
+        assert.ok(error instanceof AIError);
+        assert.equal(error.code, "provider_configuration");
+        assert.equal(error.status, 503);
+        assert.deepEqual(error.diagnostics, { stage: "image" });
+        assert.match(error.message, /retired/i);
+        assert.doesNotMatch(error.message, /description|try again/i);
+        return true;
+      },
+    );
+    assert.equal(
+      h.calls.length,
+      0,
+      "must not incur a palette request for unusable image configuration",
+    );
+    assert.equal(process.env.OPENAI_THEME_IMAGE_MODEL, model);
+    assert.equal(process.env.OPENAI_THEME_MODEL, "gpt-6-luna");
   }
 });
 test("configured text and image models are preserved and failures never start a fallback model or automatic paid retry", async () => {
