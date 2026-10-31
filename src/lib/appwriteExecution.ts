@@ -185,7 +185,12 @@ async function runThemeExecution<T>(
     try {
       // A synchronous preflight reserves a job before dispatch. Business errors
       // and old Function versions are visible before any chargeable work starts.
-      prepared = await call({ kind: "prepareTheme", circleId, prompt });
+      prepared = await call({
+        kind: "prepareTheme",
+        circleId,
+        prompt,
+        wallpaperFormat: "jpeg",
+      });
     } catch (cause) {
       if (
         cause instanceof ExecutionResponseError &&
@@ -218,6 +223,7 @@ async function runThemeExecution<T>(
             kind: "generateTheme",
             circleId,
             prompt,
+            wallpaperFormat: "jpeg",
             requestId: job.requestId,
           }),
           async: true,

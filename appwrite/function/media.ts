@@ -85,7 +85,12 @@ export async function hydrateMedia(
     if (!value?.startsWith("awfile:")) return value;
     if (urls.has(value)) return urls.get(value)!;
     const fileId = value.slice(7);
-    if (!store.uploads?.[fileId]?.ready)
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        fileId,
+      ) ||
+      !store.uploads?.[fileId]?.ready
+    )
       throw new Error("A shared attachment is unavailable.");
     const token = await services.tokens.createFileToken({
       bucketId: BUCKET,

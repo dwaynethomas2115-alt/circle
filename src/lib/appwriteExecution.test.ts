@@ -45,6 +45,7 @@ function fixture(
         });
         if (request.kind === "prepareTheme") {
           assert.equal(input.async, false);
+          assert.equal(request.wallpaperFormat, "jpeg");
           assert.equal(request.circleId, body.circleId);
           assert.equal(request.prompt, body.prompt);
           return completed({ requestId });
@@ -52,6 +53,7 @@ function fixture(
         assert.equal(request.requestId, requestId);
         if (request.kind === "generateTheme") {
           assert.equal(input.async, true);
+          assert.equal(request.wallpaperFormat, "jpeg");
           return dispatch();
         }
         assert.equal(request.kind, "themeResult");

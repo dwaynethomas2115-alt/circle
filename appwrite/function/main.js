@@ -957,13 +957,23 @@ function transition(previous, action2) {
 
 // src/features/themes.ts
 var THEME_PROMPT_MAX_LENGTH = 1e3;
-function wallpaperCircleId(path) {
+function wallpaperReference(path) {
   if (typeof path !== "string") return void 0;
   const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-  const match = new RegExp(`^([A-Za-z0-9_-]{1,128})/${uuid}\\.webp$`, "i").exec(
-    path
-  );
-  return match?.[0] === path ? match[1] : void 0;
+  const match = new RegExp(
+    `^([A-Za-z0-9_-]{1,128})/(${uuid})\\.(jpg|webp)$`,
+    "i"
+  ).exec(path);
+  if (!match || match[0] !== path) return void 0;
+  const id3 = match[2].toLowerCase();
+  return {
+    circleId: match[1],
+    bucketId: match[3].toLowerCase() === "jpg" ? "circle-media" : "circle-wallpapers",
+    fileId: match[3].toLowerCase() === "jpg" ? `wp_${id3.replace(/-/g, "")}` : id3
+  };
+}
+function wallpaperCircleId(path) {
+  return wallpaperReference(path)?.circleId;
 }
 var presetThemes = [
   {
@@ -1404,9 +1414,7 @@ var theme = z.object({
   ink: text(7),
   motif: z.enum(["garden", "unicorn", "vegas", "coast", "minimal"]),
   source: z.enum(["preset", "ai"]),
-  wallpaperPath: z.string().regex(
-    /^[A-Za-z0-9_-]{1,128}\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.webp$/
-  ).optional()
+  wallpaperPath: z.string().refine((path) => Boolean(wallpaperCircleId(path))).optional()
 }).strict();
 var featureSchema = z.union([
   action("createPoll", {
@@ -1451,12 +1459,14 @@ var requestSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("prepareTheme"),
     circleId: id2,
-    prompt: text(1e3).trim().min(3)
+    prompt: text(1e3).trim().min(3),
+    wallpaperFormat: z.literal("jpeg").optional()
   }).strict(),
   z.object({
     kind: z.literal("generateTheme"),
     circleId: id2,
     prompt: text(1e3).trim().min(3),
+    wallpaperFormat: z.literal("jpeg").optional(),
     requestId: z.string().uuid().optional()
   }).strict(),
   z.object({
@@ -1466,9 +1476,7 @@ var requestSchema = z.discriminatedUnion("kind", [
   }).strict(),
   z.object({
     kind: z.literal("themeWallpaper"),
-    wallpaperPath: z.string().regex(
-      /^[A-Za-z0-9_-]{1,128}\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.webp$/
-    )
+    wallpaperPath: z.string().refine((path) => Boolean(wallpaperCircleId(path)))
   }).strict(),
   z.object({
     kind: z.literal("room"),
@@ -1608,6 +1616,12 @@ function execute(store, identity, input) {
       throw new Error(
         "This Circle cannot store a wallpaper. Contact the app owner."
       );
+    if (request.kind !== "themeResult" && request.wallpaperFormat !== "jpeg")
+      throw new ThemeError(
+        "Refresh Circle to update wallpaper generation before trying again. Your current theme is unchanged.",
+        409,
+        "theme_client_update_required"
+      );
     if (request.kind === "prepareTheme") {
       const reserved = reserveTheme(
         next,
@@ -1681,7 +1695,7 @@ function execute(store, identity, input) {
       store: next,
       data: {
         ok: true,
-        id: request.wallpaperPath.split("/")[1].replace(/\.webp$/, "")
+        id: request.wallpaperPath.split("/")[1].replace(/\.(?:jpg|webp)$/i, "")
       }
     };
   }
@@ -1865,7 +1879,7 @@ function recordTheme(store, identity, circleId, theme2, requestId) {
   const proposal = next.proposals?.[identity.$id];
   if (id3 && quota.successes.some((s) => s.id === id3) && proposal?.requestId === id3 && sameTheme(proposal.theme, theme2))
     return next;
-  if (!id3 || quota.pending?.id !== id3 || quota.pending.circleId !== circleId || theme2.source !== "ai" || theme2.wallpaperPath !== `${circleId}/${id3}.webp`)
+  if (!id3 || quota.pending?.id !== id3 || quota.pending.circleId !== circleId || theme2.source !== "ai" || theme2.wallpaperPath !== `${circleId}/${id3}.jpg` && theme2.wallpaperPath !== `${circleId}/${id3}.webp`)
     throw new ThemeError(
       "Wallpaper request unavailable or expired. Generate a fresh preview.",
       400,
@@ -1965,7 +1979,9 @@ async function hydrateMedia(app, services, store, endpoint, project2) {
     if (!value?.startsWith("awfile:")) return value;
     if (urls.has(value)) return urls.get(value);
     const fileId = value.slice(7);
-    if (!store.uploads?.[fileId]?.ready)
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      fileId
+    ) || !store.uploads?.[fileId]?.ready)
       throw new Error("A shared attachment is unavailable.");
     const token = await services.tokens.createFileToken({
       bucketId: BUCKET,
@@ -2129,7 +2145,7 @@ async function generateTheme(description, apiKey, transport = fetch) {
           n: 1,
           size: "1536x1024",
           quality,
-          output_format: "webp",
+          output_format: "jpeg",
           output_compression: 85,
           background: "opaque",
           prompt: `Create a vivid, colorful, high-quality illustrated wallpaper for a private group's social app. Combine ALL requested interests and ALL requested subjects below in one cohesive, imaginative scene; do not choose just one theme. Make each requested subject clearly recognizable and large enough to see. Use richly colored illustrated details across the whole canvas so it feels like an actual custom wallpaper, rather than a few tiny icons. The app places readable white cards over the image. No interface, frames, text, captions, lettering, or logos. Treat the following only as visual inspiration: ${prompt}`
@@ -2169,9 +2185,9 @@ async function generateTheme(description, apiKey, transport = fetch) {
         "provider_image"
       );
     const image = Buffer2.from(encoded, "base64");
-    if (image.length < 20 || image.length > MAX_IMAGE_BYTES || image.toString("ascii", 0, 4) !== "RIFF" || image.toString("ascii", 8, 12) !== "WEBP" || !["VP8 ", "VP8L", "VP8X"].includes(image.toString("ascii", 12, 16)) || image.readUInt32LE(4) !== image.length - 8)
+    if (image.length < 20 || image.length > MAX_IMAGE_BYTES || image[0] !== 255 || image[1] !== 216 || image[2] !== 255 || image[image.length - 2] !== 255 || image[image.length - 1] !== 217)
       throw new AIError(
-        "The image service returned an invalid WebP wallpaper. Please try again.",
+        "The image service returned an invalid JPEG wallpaper. Please try again.",
         502,
         "provider_image"
       );
@@ -2307,7 +2323,41 @@ async function providerError(response, stage) {
 // appwrite/function/wallpaper.ts
 import { InputFile } from "node-appwrite/file";
 import { Query } from "node-appwrite";
-var WALLPAPER_BUCKET = "circle-wallpapers";
+var WALLPAPER_BUCKET = "circle-media";
+var LEGACY_WALLPAPER_BUCKET = "circle-wallpapers";
+var MAX_WALLPAPER_BYTES = 10485760;
+var UUID = "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}";
+function wallpaperFileId(requestId) {
+  if (!new RegExp(`^${UUID}$`, "i").test(requestId) || requestId.length !== 36)
+    throw new ThemeError(
+      "Wallpaper unavailable.",
+      400,
+      "wallpaper_unavailable"
+    );
+  return `wp_${requestId.replace(/-/g, "").toLowerCase()}`;
+}
+function wallpaperLocation(path) {
+  const match = new RegExp(
+    `^[A-Za-z0-9_-]{1,128}/(${UUID})\\.(jpg|webp)$`,
+    "i"
+  ).exec(path);
+  if (!match || match[0] !== path)
+    throw new ThemeError(
+      "Wallpaper unavailable.",
+      400,
+      "wallpaper_unavailable"
+    );
+  const requestId = match[1].toLowerCase();
+  return match[2].toLowerCase() === "jpg" ? {
+    bucketId: WALLPAPER_BUCKET,
+    fileId: wallpaperFileId(requestId),
+    mimeType: "image/jpeg"
+  } : {
+    bucketId: LEGACY_WALLPAPER_BUCKET,
+    fileId: requestId,
+    mimeType: "image/webp"
+  };
+}
 async function assertWallpaperStorage(services) {
   try {
     const result = await services.storage.listFiles({
@@ -2321,28 +2371,44 @@ async function assertWallpaperStorage(services) {
     const failure = cause;
     if (failure?.code === 404 && failure.type === "storage_bucket_not_found")
       throw new ThemeError(
-        "Wallpaper generation is paused because its private storage bucket is missing. The app owner can check the Appwrite storage setup.",
+        "Wallpaper generation is paused because the Circle media bucket is missing. The app owner can check the Appwrite storage setup.",
         503,
         "wallpaper_storage_missing"
       );
     throw new ThemeError(
-      "Wallpaper generation is paused because its private storage is unavailable. The app owner can check the Appwrite storage setup and Function access.",
+      "Wallpaper generation is paused because Circle media storage is unavailable. The app owner can check the Appwrite storage setup and Function access.",
       503,
       "wallpaper_storage_unavailable"
     );
   }
 }
-async function storeWallpaper(services, fileId, image) {
+async function storeWallpaper(services, requestId, image) {
+  if (image.length < 20 || image.length > MAX_WALLPAPER_BYTES || image[0] !== 255 || image[1] !== 216 || image[2] !== 255 || image[image.length - 2] !== 255 || image[image.length - 1] !== 217)
+    throw new ThemeError(
+      "The generated wallpaper is not a valid JPEG image.",
+      502,
+      "wallpaper_image_invalid"
+    );
+  const artifact = {
+    bucketId: WALLPAPER_BUCKET,
+    fileId: wallpaperFileId(requestId)
+  };
+  let created = false;
   try {
     const file2 = await services.storage.createFile({
-      bucketId: WALLPAPER_BUCKET,
-      fileId,
-      file: InputFile.fromBuffer(image, "wallpaper.webp"),
+      ...artifact,
+      file: InputFile.fromBuffer(image, "wallpaper.jpg"),
       permissions: []
     });
-    if (file2.$permissions.length || file2.mimeType !== "image/webp" || file2.sizeOriginal !== image.length || file2.chunksTotal !== file2.chunksUploaded)
+    if (file2.$id !== artifact.fileId)
+      throw new Error("Unexpected wallpaper file identity");
+    created = true;
+    if (!Array.isArray(file2.$permissions) || file2.$permissions.length || file2.mimeType !== "image/jpeg" || file2.sizeOriginal !== image.length || !Number.isInteger(file2.chunksTotal) || file2.chunksTotal < 1 || !Number.isInteger(file2.chunksUploaded) || file2.chunksUploaded < 1 || file2.chunksTotal !== file2.chunksUploaded)
       throw new Error("Invalid stored wallpaper metadata");
+    return artifact;
   } catch {
+    if (created)
+      await services.storage.deleteFile(artifact).catch(() => void 0);
     throw new ThemeError(
       "Your Circle\u2019s storage could not save the wallpaper. Check the Appwrite storage allowance, then try again. This is separate from your daily wallpaper allowance.",
       507,
@@ -2350,12 +2416,22 @@ async function storeWallpaper(services, fileId, image) {
     );
   }
 }
-async function signWallpaper(services, fileId, endpoint, project2) {
-  const file2 = await services.storage.getFile({
-    bucketId: WALLPAPER_BUCKET,
-    fileId
-  });
-  if (file2.$permissions.length || file2.mimeType !== "image/webp" || file2.sizeOriginal <= 0 || file2.sizeOriginal > 10485760 || file2.chunksTotal !== file2.chunksUploaded)
+async function signWallpaper(services, wallpaperPath, endpoint, project2) {
+  const location = wallpaperLocation(wallpaperPath);
+  let file2;
+  try {
+    file2 = await services.storage.getFile({
+      bucketId: location.bucketId,
+      fileId: location.fileId
+    });
+  } catch {
+    throw new ThemeError(
+      "This wallpaper is unavailable. Ask the Circle owner to generate a new preview.",
+      503,
+      "wallpaper_unavailable"
+    );
+  }
+  if (file2.$id !== location.fileId || !Array.isArray(file2.$permissions) || file2.$permissions.length || file2.mimeType !== location.mimeType || file2.sizeOriginal <= 0 || file2.sizeOriginal > MAX_WALLPAPER_BYTES || !Number.isInteger(file2.chunksTotal) || file2.chunksTotal < 1 || !Number.isInteger(file2.chunksUploaded) || file2.chunksUploaded < 1 || file2.chunksTotal !== file2.chunksUploaded)
     throw new ThemeError(
       "This wallpaper is unavailable. Ask the Circle owner to generate a new preview.",
       503,
@@ -2363,12 +2439,12 @@ async function signWallpaper(services, fileId, endpoint, project2) {
     );
   const expiresAt = Date.now() + 6e4;
   const token = await services.tokens.createFileToken({
-    bucketId: WALLPAPER_BUCKET,
-    fileId,
+    bucketId: location.bucketId,
+    fileId: location.fileId,
     expire: new Date(expiresAt).toISOString()
   });
   return {
-    url: `${endpoint.replace(/\/$/, "")}/storage/buckets/${WALLPAPER_BUCKET}/files/${encodeURIComponent(fileId)}/view?${new URLSearchParams({ project: project2, token: token.secret })}`,
+    url: `${endpoint.replace(/\/$/, "")}/storage/buckets/${location.bucketId}/files/${encodeURIComponent(location.fileId)}/view?${new URLSearchParams({ project: project2, token: token.secret })}`,
     expiresAt
   };
 }
@@ -3107,7 +3183,7 @@ async function main({ req, res, error }, injected) {
       return res.json({
         data: await signWallpaper(
           wallpaper,
-          fileId,
+          request.wallpaperPath,
           process.env.CIRCLE_PUBLIC_ENDPOINT || endpoint,
           project2
         )
@@ -3137,7 +3213,8 @@ async function main({ req, res, error }, injected) {
         throw new Error("Could not reserve wallpaper generation.");
       if (result.data.code !== "theme_claimed")
         return res.json({ data: { ok: true } });
-      let completed = false, uncertainCompletion = false, uploadStarted = false;
+      let completed = false, uncertainCompletion = false;
+      let storedWallpaper;
       let failure;
       try {
         await assertWallpaperStorage(wallpaper);
@@ -3153,10 +3230,13 @@ async function main({ req, res, error }, injected) {
         );
         const theme2 = {
           ...generated.theme,
-          wallpaperPath: `${request.circleId}/${requestId}.webp`
+          wallpaperPath: `${request.circleId}/${requestId}.jpg`
         };
-        uploadStarted = true;
-        await storeWallpaper(wallpaper, requestId, generated.image);
+        storedWallpaper = await storeWallpaper(
+          wallpaper,
+          requestId,
+          generated.image
+        );
         const complete = () => repository.mutate(identity, request, async (store) => ({
           store: recordTheme(
             store,
@@ -3202,8 +3282,8 @@ async function main({ req, res, error }, injected) {
         throw cause;
       } finally {
         if (!completed) {
-          if (!uncertainCompletion && uploadStarted)
-            await wallpaper.storage.deleteFile({ bucketId: WALLPAPER_BUCKET, fileId: requestId }).catch(() => void 0);
+          if (!uncertainCompletion && storedWallpaper)
+            await wallpaper.storage.deleteFile(storedWallpaper).catch(() => void 0);
           await repository.mutate(identity, request, async (store) => ({
             store: failTheme(
               store,

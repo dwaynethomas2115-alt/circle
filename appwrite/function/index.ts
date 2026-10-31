@@ -13,7 +13,7 @@ import { generateTheme, AIError } from "./ai";
 import {
   storeWallpaper,
   signWallpaper,
-  WALLPAPER_BUCKET,
+  type WallpaperArtifact,
   assertWallpaperStorage,
   type WallpaperServices,
 } from "./wallpaper";
@@ -92,7 +92,7 @@ export default async function main(
       return res.json({
         data: await signWallpaper(
           wallpaper,
-          fileId,
+          request.wallpaperPath,
           process.env.CIRCLE_PUBLIC_ENDPOINT || endpoint,
           project,
         ),
@@ -139,8 +139,8 @@ export default async function main(
       if ((result.data as Result).code !== "theme_claimed")
         return res.json({ data: { ok: true } });
       let completed = false,
-        uncertainCompletion = false,
-        uploadStarted = false;
+        uncertainCompletion = false;
+      let storedWallpaper: WallpaperArtifact | undefined;
       let failure: ThemeFailure | undefined;
       try {
         // Read-only check using existing file-read access; no paid provider work
@@ -158,10 +158,13 @@ export default async function main(
         );
         const theme = {
           ...generated.theme,
-          wallpaperPath: `${request.circleId}/${requestId}.webp`,
+          wallpaperPath: `${request.circleId}/${requestId}.jpg`,
         };
-        uploadStarted = true;
-        await storeWallpaper(wallpaper, requestId, generated.image);
+        storedWallpaper = await storeWallpaper(
+          wallpaper,
+          requestId,
+          generated.image,
+        );
         const complete = () =>
           repository.mutate(identity, request, async (store) => ({
             store: recordTheme(
@@ -214,9 +217,9 @@ export default async function main(
         throw cause;
       } finally {
         if (!completed) {
-          if (!uncertainCompletion && uploadStarted)
+          if (!uncertainCompletion && storedWallpaper)
             await wallpaper.storage
-              .deleteFile({ bucketId: WALLPAPER_BUCKET, fileId: requestId })
+              .deleteFile(storedWallpaper)
               .catch(() => undefined);
           await repository
             .mutate(identity, request, async (store) => ({

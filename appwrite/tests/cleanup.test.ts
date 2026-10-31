@@ -38,3 +38,22 @@ test("cleanup preserves referenced/recent files; expired revoked uploads cannot 
     /unavailable/,
   );
 });
+
+test("ordinary upload cleanup never targets shared-bucket wallpaper IDs or unknown file namespaces", () => {
+  const store = emptyStore();
+  const before = Date.now() - 86_400_000;
+  const old = {
+    owner: "alice",
+    mediaType: "image" as const,
+    ready: true,
+    createdAt: before - 1,
+  };
+  const orphan = "00000000-0000-4000-8000-000000000001";
+  const wallpaper = "wp_00000000000040008000000000000002";
+  store.uploads = {
+    [orphan]: { ...old },
+    [wallpaper]: { ...old },
+    "unknown-file": { ...old },
+  };
+  assert.deepEqual(unreferencedUploads(store, before), [orphan]);
+});

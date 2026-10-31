@@ -1,5 +1,6 @@
 import test from "node:test";
-import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
+import { URL as NodeURL } from "node:url";
 import assert from "node:assert/strict";
 import { Permission, Role } from "node-appwrite";
 import { execute, emptyStore, recordTheme, project } from "../function/domain";
@@ -147,6 +148,7 @@ test("AI quota, role checks and signed-in proposal provenance are server enforce
   const f = setup(),
     request = {
       kind: "prepareTheme",
+      wallpaperFormat: "jpeg",
       circleId: f.circleId,
       prompt: "A lovely garden",
     };
@@ -164,7 +166,7 @@ test("AI quota, role checks and signed-in proposal provenance are server enforce
   const theme = {
     ...presetThemes[0],
     id: "generated-theme",
-    wallpaperPath: `${f.circleId}/${(reserved.data as { requestId: string }).requestId}.webp`,
+    wallpaperPath: `${f.circleId}/${(reserved.data as { requestId: string }).requestId}.jpg`,
     source: "ai" as const,
   };
   const apply = {
@@ -200,9 +202,11 @@ test("AI sends only explicit prompt, validates response and rejects unsafe palet
         JSON.stringify({
           data: [
             {
-              b64_json: Buffer.from(
-                "524946461000000057454250565038200000000000000000",
-                "hex",
+              b64_json: readFileSync(
+                new NodeURL(
+                  "../../assets/photos/avatar-alex.jpg",
+                  import.meta.url,
+                ),
               ).toString("base64"),
             },
           ],

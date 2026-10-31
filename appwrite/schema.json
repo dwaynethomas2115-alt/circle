@@ -1334,12 +1334,5 @@
       "THEME_DAILY_LIMIT": "50",
       "THEME_BURST_LIMIT": "3"
     }
-  },
-  "wallpaperBucket": {
-    "id": "circle-wallpapers",
-    "fileSecurity": true,
-    "permissions": [],
-    "maximumFileSize": 10485760,
-    "allowedFileExtensions": ["webp"]
   }
 }

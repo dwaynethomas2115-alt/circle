@@ -164,7 +164,7 @@ export async function generateTheme(
           n: 1,
           size: "1536x1024",
           quality,
-          output_format: "webp",
+          output_format: "jpeg",
           output_compression: 85,
           background: "opaque",
           prompt: `Create a vivid, colorful, high-quality illustrated wallpaper for a private group's social app. Combine ALL requested interests and ALL requested subjects below in one cohesive, imaginative scene; do not choose just one theme. Make each requested subject clearly recognizable and large enough to see. Use richly colored illustrated details across the whole canvas so it feels like an actual custom wallpaper, rather than a few tiny icons. The app places readable white cards over the image. No interface, frames, text, captions, lettering, or logos. Treat the following only as visual inspiration: ${prompt}`,
@@ -216,13 +216,14 @@ export async function generateTheme(
     if (
       image.length < 20 ||
       image.length > MAX_IMAGE_BYTES ||
-      image.toString("ascii", 0, 4) !== "RIFF" ||
-      image.toString("ascii", 8, 12) !== "WEBP" ||
-      !["VP8 ", "VP8L", "VP8X"].includes(image.toString("ascii", 12, 16)) ||
-      image.readUInt32LE(4) !== image.length - 8
+      image[0] !== 0xff ||
+      image[1] !== 0xd8 ||
+      image[2] !== 0xff ||
+      image[image.length - 2] !== 0xff ||
+      image[image.length - 1] !== 0xd9
     )
       throw new AIError(
-        "The image service returned an invalid WebP wallpaper. Please try again.",
+        "The image service returned an invalid JPEG wallpaper. Please try again.",
         502,
         "provider_image",
       );

@@ -4,6 +4,12 @@ import { Repository } from "./function/repository";
 import { parse, record } from "./function/records";
 import type { Store } from "./function/domain";
 import { getPostMedia } from "../src/lib/postMedia";
+
+// Regular upload reservations use UUIDs. Shared-bucket wallpapers have wp_ IDs
+// and must never be swept as abandoned person-owned uploads, even with a bad row.
+const isRegularUploadFileId = (id: unknown): id is string =>
+  typeof id === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 // Pure helper retained for domain/security tests; live cleanup uses indexed media_refs below.
 export function unreferencedUploads(store: Store, before: number): string[] {
   const refs = new Set(
@@ -18,7 +24,10 @@ export function unreferencedUploads(store: Store, before: number): string[] {
       .map((s) => s.slice(7)),
   );
   return Object.entries(store.uploads || {})
-    .filter(([id, u]) => u.createdAt < before && !refs.has(id))
+    .filter(
+      ([id, u]) =>
+        isRegularUploadFileId(id) && u.createdAt < before && !refs.has(id),
+    )
     .map(([id]) => id);
 }
 async function main() {
@@ -56,7 +65,8 @@ async function main() {
     });
     cursor = page.rows.length === 100 ? page.rows.at(-1)!.$id : undefined;
     for (const upload of page.rows) {
-      const fileId = upload.entity_id as string;
+      const fileId = upload.entity_id;
+      if (!isRegularUploadFileId(fileId)) continue;
       if ((await repo.list("media_refs", "related_id", [fileId])).length)
         continue;
       count++;

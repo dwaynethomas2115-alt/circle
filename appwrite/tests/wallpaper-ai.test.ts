@@ -1,16 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
+import { URL as NodeURL } from "node:url";
 import { generateTheme, AIError } from "../function/ai";
 import { presetThemes } from "../../src/features/themes";
 const { label, accent, background, surface, ink, motif } = presetThemes[0];
 const palette = { label, accent, background, surface, ink, motif };
-const image = Buffer.alloc(24);
-image.write("RIFF", 0);
-image.writeUInt32LE(image.length - 8, 4);
-image.write("WEBP", 8);
-image.write("VP8 ", 12);
-image.writeUInt32LE(4, 16);
+const image = readFileSync(
+  new NodeURL("../../assets/photos/avatar-alex.jpg", import.meta.url),
+);
 const encoded = image.toString("base64");
 const json = (
   value: unknown,
@@ -91,7 +90,8 @@ test("AI wallpaper combines every requested interest and sends only explicit vis
   const request = h.calls[1].body;
   assert.equal(request.model, "gpt-image-1");
   assert.equal(request.size, "1536x1024");
-  assert.equal(request.output_format, "webp");
+  assert.equal(request.output_format, "jpeg");
+  assert.equal(request.output_compression, 85);
   assert.equal(request.quality, "medium");
   assert.equal(request.n, 1);
   assert.match(
@@ -127,14 +127,19 @@ test("invalid or unreadable palette cannot start an image request", async () => 
     assert.equal(h.calls.length, 1);
   }
 });
-test("invalid base64, WebP headers, declared length, and oversized image payloads fail before storage", async () => {
-  const wrongLength = Buffer.from(image);
-  wrongLength.writeUInt32LE(100, 4);
+test("invalid base64, JPEG markers, truncated images, and oversized payloads fail before storage", async () => {
+  const wrongEnd = Buffer.from(image);
+  wrongEnd[wrongEnd.length - 1] = 0;
+  const wrongPrefix = Buffer.from(image);
+  wrongPrefix[0] = 0;
   for (const imageValue of [
     null,
     "not base64!",
     Buffer.from("<svg>unsafe</svg>").toString("base64"),
-    wrongLength.toString("base64"),
+    wrongEnd.toString("base64"),
+    wrongPrefix.toString("base64"),
+    image.subarray(0, 19).toString("base64"),
+    Buffer.from("RIFF0123WEBPVP8 image bytes").toString("base64"),
     Buffer.alloc(10_485_761).toString("base64"),
   ]) {
     const h = harness({ imageValue });

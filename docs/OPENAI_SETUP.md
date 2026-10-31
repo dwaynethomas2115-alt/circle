@@ -2,14 +2,14 @@
 
 Circle uses your existing Appwrite project. A Circle owner or admin describes everyone's interests in one prompt, and OpenAI generates a colorful illustrated wallpaper combining those subjects. For example: “Anastasia loves pink and Barbie, and Daelin loves tornadoes and volcanoes. Make it bright and playful.” The app previews the image before you apply it.
 
-For the current API-key/model-access error, use the [read-only diagnosis and Dot handoff](OPENAI_DIAGNOSIS.md). The latest supplied deployment report still has an independent blocker: the Free project already uses its one allowed bucket for `circle-media`, so `circle-wallpapers` is absent. The deployed Function alone does not establish that wallpapers work. No credential, permission, billing, plan, or storage changes are authorized by these instructions.
+Dwayne approved sharing the existing `circle-media` bucket. New wallpapers use JPEG, which its existing extension list already accepts. The [shared storage deployment handoff](SHARED_WALLPAPER_STORAGE.md) replaces the earlier second-bucket requirement; no bucket, extension, permission, or plan change is needed. The new server and client code still need matching deployments. OpenAI key/model access remains a separate [read-only diagnosis](OPENAI_DIAGNOSIS.md), and no paid generation test is authorized here.
 
 ## Connect the existing Function
 
 1. Open your Appwrite project, then **Functions → circle-api**. Keep its existing database, users, variables and permissions.
-2. Inspect the active Function deployment. Dot last confirmed deployment `6ae59cd6da3487b42096` from `c6eb238` on October 31, 2026. Its entrypoint is `main.js`, runtime Node.js 22, build command `npm ci --omit=dev`, and timeout **180 seconds**. The committed `main.js` is already bundled from source. Dot's one-time manual archive deployment remains suitable for separately authorized code updates; [Git deployment](VERCEL_SETUP.md) is optional and was not granted in the last handoff.
+2. Inspect the active Function deployment. Dot last confirmed deployment `6ae5c5f6876bd6211b25` from `b9ed85b` on October 31, 2026 at 10:43 UTC. That version predates the shared-bucket JPEG update. Its entrypoint is `main.js`, runtime Node.js 22, build command `npm ci --omit=dev`, and timeout **180 seconds**. The committed `main.js` is already bundled from source. Dot's one-time manual archive deployment remains suitable for separately authorized code updates; [Git deployment](VERCEL_SETUP.md) is optional and was not granted in the last handoff.
 3. Keep execution restricted to signed-in users. Retain the existing dynamic key scopes: `rows.read`, `rows.write`, `files.read`, `files.write`, and `tokens.write`.
-4. Inspect the storage prerequisite. The implementation expects a private bucket named **`circle-wallpapers`**, file security enabled, no bucket permissions, a 10 MiB maximum file size, and `webp` as its allowed extension. The current Free project cannot create it while its only bucket is `circle-media`. Report this blocker; do not repeat bucket creation, alter media-bucket permissions/extensions, run provisioning, or upgrade the plan. A storage redesign is separate work requiring the user's approval.
+4. Inspect the existing **`circle-media`** bucket. Keep file security on, bucket permission **create(users)** only, extensions **`jpg`, `mp4`, `mov`**, and the existing file-size ceiling. New server-created JPEG wallpapers have empty file permissions, use `wp_` file IDs, and are limited by the app to 10 MiB. Do not create a second bucket, alter permissions/extensions, move files, run provisioning, or upgrade the plan. Legacy WebP paths can still read an existing old wallpaper bucket without creating one.
 
 The existing 25-table database stays in place. Quota JSON records are read compatibly; no fresh database or data transfer is required. The old Supabase migrations are unrelated to this setup.
 
@@ -25,7 +25,7 @@ Optional server variables:
 | Variable                     | Default        | Purpose                                                  |
 | ---------------------------- | -------------- | -------------------------------------------------------- |
 | `OPENAI_THEME_MODEL`         | `gpt-4.1-mini` | Matching accessible interface colors.                    |
-| `OPENAI_THEME_IMAGE_MODEL`   | `gpt-image-1`  | Images API model supporting WebP output.                 |
+| `OPENAI_THEME_IMAGE_MODEL`   | `gpt-image-1`  | Images API model supporting JPEG output.                 |
 | `OPENAI_THEME_IMAGE_QUALITY` | `medium`       | `low`, `medium`, or `high`; affects image cost and time. |
 | `THEME_DAILY_LIMIT`          | `50`           | Successful wallpapers per account in a rolling 24 hours. |
 | `THEME_BURST_LIMIT`          | `3`            | Generation attempts per account per minute.              |
@@ -34,7 +34,7 @@ OpenAI and Appwrite API keys belong in server secrets. Vercel's `EXPO_PUBLIC_APP
 
 ## Generate a wallpaper after prerequisites and test authorization
 
-The following is the intended user flow, not a verification step authorized by the current diagnosis. Do not use it until the separate storage blocker is resolved and the user has approved a live generation test.
+The following is the intended user flow, not a verification step authorized by the current diagnosis. Do not use it until the matching shared-bucket server/client update is active, provider access is checked, and the user has approved a live generation test.
 
 1. Sign in to Circle as its owner or an admin.
 2. Open the Circle → **Settings → Dream up your Circle**.
@@ -58,7 +58,7 @@ The Function allows one active generation per account. Failed attempts release t
 | Wallpaper reports an invalid response after waiting | Update both the website and Appwrite Function. Appwrite leaves background-execution response bodies empty; the updated client reads the saved wallpaper result separately. See the [deployment follow-up](WALLPAPER_DEPLOYMENT.md).          |
 | OpenAI billing/model access                         | Check API billing, model permissions and any organization-verification requirement.                                                                                                                                                          |
 | API key or image-model access message               | The old code merged palette/image HTTP 401 and 403 into one message. Use [the diagnosis handoff](OPENAI_DIAGNOSIS.md) to identify the stage and inspect the existing key/project/model metadata. No key replacement or paid test is implied. |
-| Wallpaper storage unavailable                       | Check the private `circle-wallpapers` bucket, storage capacity and Function file/token scopes.                                                                                                                                               |
+| Wallpaper storage unavailable                       | Check the existing `circle-media` bucket, storage capacity, matching shared-bucket code versions, and Function file/token scopes. No second bucket is needed.                                                                                |
 | Generation already running                          | Let the current job finish. Retrying in the same client resumes its execution rather than starting another paid request.                                                                                                                     |
 | Daily allowance reached                             | Wait for the displayed reset time, or adjust the server limit if you accept the additional API cost.                                                                                                                                         |
 | Login works in Codespaces but fails on Vercel       | Register the exact Vercel hostname as an Appwrite Web platform. See the [Vercel guide](VERCEL_SETUP.md).                                                                                                                                     |

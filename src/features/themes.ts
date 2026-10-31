@@ -2,14 +2,73 @@ import type { CircleTheme } from "./types";
 
 export const THEME_PROMPT_MAX_LENGTH = 1_000;
 
-/** Private storage identifiers only. Theme JSON cannot supply arbitrary URLs. */
-export function wallpaperCircleId(path: unknown): string | undefined {
+/** Logical paths describe a generated asset, never an arbitrary storage URL. */
+function wallpaperReference(
+  path: unknown,
+): { circleId: string; bucketId: string; fileId: string } | undefined {
   if (typeof path !== "string") return undefined;
   const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-  const match = new RegExp(`^([A-Za-z0-9_-]{1,128})/${uuid}\\.webp$`, "i").exec(
-    path,
-  );
-  return match?.[0] === path ? match[1] : undefined;
+  const match = new RegExp(
+    `^([A-Za-z0-9_-]{1,128})/(${uuid})\\.(jpg|webp)$`,
+    "i",
+  ).exec(path);
+  if (!match || match[0] !== path) return undefined;
+  const id = match[2].toLowerCase();
+  return {
+    circleId: match[1],
+    bucketId:
+      match[3].toLowerCase() === "jpg" ? "circle-media" : "circle-wallpapers",
+    fileId:
+      match[3].toLowerCase() === "jpg" ? `wp_${id.replace(/-/g, "")}` : id,
+  };
+}
+
+/** Private storage identifiers only. Theme JSON cannot supply arbitrary URLs. */
+export function wallpaperCircleId(path: unknown): string | undefined {
+  return wallpaperReference(path)?.circleId;
+}
+
+/** Bind a server-issued token URL to this exact wallpaper and Appwrite project. */
+export function wallpaperUrlMatchesPath(
+  value: unknown,
+  wallpaperPath: unknown,
+  endpoint: string | undefined,
+  projectId: string | undefined,
+): value is string {
+  const asset = wallpaperReference(wallpaperPath);
+  if (!asset || typeof value !== "string" || !endpoint || !projectId)
+    return false;
+  if (value !== value.trim() || /[\r\n\t#]/.test(value)) return false;
+  try {
+    const configured = new URL(endpoint);
+    const image = new URL(value);
+    if (
+      configured.protocol !== "https:" ||
+      configured.username ||
+      configured.password ||
+      configured.search ||
+      configured.hash ||
+      image.protocol !== "https:" ||
+      image.origin !== configured.origin ||
+      image.username ||
+      image.password ||
+      image.hash ||
+      image.pathname !==
+        `${configured.pathname.replace(/\/$/, "")}/storage/buckets/${asset.bucketId}/files/${asset.fileId}/view` ||
+      image.searchParams.getAll("project").length !== 1 ||
+      image.searchParams.get("project") !== projectId ||
+      image.searchParams.getAll("token").length !== 1 ||
+      !image.searchParams.get("token")
+    )
+      return false;
+    let unknownParameter = false;
+    image.searchParams.forEach((_entry, key) => {
+      if (key !== "project" && key !== "token") unknownParameter = true;
+    });
+    return !unknownParameter;
+  } catch {
+    return false;
+  }
 }
 
 /** Curated, accessible light palettes. Demo prompts choose from these presets. */

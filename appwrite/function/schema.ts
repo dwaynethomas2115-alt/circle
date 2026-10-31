@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { wallpaperCircleId } from "../../src/features/themes";
 import { MAX_POST_PHOTOS, validatePostMedia } from "../../src/lib/postMedia";
 const id = z.string().min(1).max(128);
 const text = (max: number) => z.string().max(max);
@@ -127,9 +128,7 @@ const theme = z
     source: z.enum(["preset", "ai"]),
     wallpaperPath: z
       .string()
-      .regex(
-        /^[A-Za-z0-9_-]{1,128}\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.webp$/,
-      )
+      .refine((path) => Boolean(wallpaperCircleId(path)))
       .optional(),
   })
   .strict();
@@ -188,6 +187,7 @@ export const requestSchema = z.discriminatedUnion("kind", [
       kind: z.literal("prepareTheme"),
       circleId: id,
       prompt: text(1000).trim().min(3),
+      wallpaperFormat: z.literal("jpeg").optional(),
     })
     .strict(),
   z
@@ -195,6 +195,7 @@ export const requestSchema = z.discriminatedUnion("kind", [
       kind: z.literal("generateTheme"),
       circleId: id,
       prompt: text(1000).trim().min(3),
+      wallpaperFormat: z.literal("jpeg").optional(),
       requestId: z.string().uuid().optional(),
     })
     .strict(),
@@ -210,9 +211,7 @@ export const requestSchema = z.discriminatedUnion("kind", [
       kind: z.literal("themeWallpaper"),
       wallpaperPath: z
         .string()
-        .regex(
-          /^[A-Za-z0-9_-]{1,128}\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.webp$/,
-        ),
+        .refine((path) => Boolean(wallpaperCircleId(path))),
     })
     .strict(),
   z

@@ -247,6 +247,12 @@ export function execute(
       throw new Error(
         "This Circle cannot store a wallpaper. Contact the app owner.",
       );
+    if (request.kind !== "themeResult" && request.wallpaperFormat !== "jpeg")
+      throw new ThemeError(
+        "Refresh Circle to update wallpaper generation before trying again. Your current theme is unchanged.",
+        409,
+        "theme_client_update_required",
+      );
     if (request.kind === "prepareTheme") {
       const reserved = reserveTheme(
         next,
@@ -346,7 +352,7 @@ export function execute(
       store: next,
       data: {
         ok: true,
-        id: request.wallpaperPath.split("/")[1].replace(/\.webp$/, ""),
+        id: request.wallpaperPath.split("/")[1].replace(/\.(?:jpg|webp)$/i, ""),
       },
     };
   }
@@ -617,7 +623,8 @@ export function recordTheme(
     quota.pending?.id !== id ||
     quota.pending.circleId !== circleId ||
     theme.source !== "ai" ||
-    theme.wallpaperPath !== `${circleId}/${id}.webp`
+    (theme.wallpaperPath !== `${circleId}/${id}.jpg` &&
+      theme.wallpaperPath !== `${circleId}/${id}.webp`)
   )
     throw new ThemeError(
       "Wallpaper request unavailable or expired. Generate a fresh preview.",

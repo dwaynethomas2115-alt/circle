@@ -7,6 +7,7 @@ import {
   validateTheme,
   THEME_PROMPT_MAX_LENGTH,
   wallpaperCircleId,
+  wallpaperUrlMatchesPath,
   validateGeneratedWallpaper,
 } from "./themes";
 
@@ -123,6 +124,108 @@ test("Appwrite Circle IDs keep their exact identity in private wallpaper paths",
       undefined,
     );
   }
+});
+
+test("shared-bucket JPEG wallpapers preserve exact Circle identity and legacy WebP paths", () => {
+  const circle = "circle-Anastasia_01";
+  const id = "ABCDEF12-3456-4789-ABCD-1234567890AB";
+  for (const extension of ["jpg", "JPG", "webp", "WEBP"]) {
+    const wallpaperPath = `${circle}/${id}.${extension}`;
+    assert.equal(wallpaperCircleId(wallpaperPath), circle);
+    assert.equal(
+      validateGeneratedWallpaper(
+        { ...defaultTheme, source: "ai", wallpaperPath },
+        circle,
+      ),
+      true,
+    );
+    assert.equal(
+      validateGeneratedWallpaper(
+        { ...defaultTheme, source: "ai", wallpaperPath },
+        circle.toLowerCase(),
+      ),
+      false,
+    );
+    for (const invalid of [
+      `${wallpaperPath}\n`,
+      `${wallpaperPath}\r\n`,
+      `${wallpaperPath}?token=private`,
+      `${wallpaperPath}/view`,
+      `${circle}/${id}.jpeg`,
+      `${circle}/${id}.jpg.webp`,
+      `${circle}/wp_${id.replace(/-/g, "")}.jpg`,
+      `https://example.test/${wallpaperPath}`,
+    ]) {
+      assert.equal(wallpaperCircleId(invalid), undefined);
+    }
+  }
+});
+
+test("signed wallpaper URLs bind to the exact project, endpoint, format and file namespace", () => {
+  const endpoint = "https://fra.cloud.appwrite.io/v1";
+  const project = "circle-project";
+  const circle = "circle-Anastasia_01";
+  const id = "abcdef12-3456-4789-abcd-1234567890ab";
+  const jpg = `${circle}/${id}.jpg`;
+  const legacy = `${circle}/${id}.webp`;
+  const shared = `${endpoint}/storage/buckets/circle-media/files/wp_${id.replace(/-/g, "")}/view?project=${project}&token=private-token`;
+  const old = `${endpoint}/storage/buckets/circle-wallpapers/files/${id}/view?project=${project}&token=private-token`;
+  const matches = (value: unknown, path: unknown = jpg) =>
+    wallpaperUrlMatchesPath(value, path, endpoint, project);
+  assert.equal(matches(shared), true);
+  assert.equal(matches(old, legacy), true);
+  assert.equal(matches(shared, `${circle}/${id.toUpperCase()}.JPG`), true);
+  assert.equal(matches(old, `${circle}/${id.toUpperCase()}.WEBP`), true);
+  assert.equal(
+    wallpaperUrlMatchesPath(shared, jpg, endpoint + "/", project),
+    true,
+  );
+  assert.equal(matches(old), false);
+  assert.equal(matches(shared, legacy), false);
+  for (const invalid of [
+    shared.replace("https:", "http:"),
+    shared.replace("fra.cloud.appwrite.io", "evil.example.test"),
+    shared.replace("/v1/", "/unrelated/"),
+    shared.replace("/v1/", "/extra/v1/"),
+    shared.replace("circle-media", "another-bucket"),
+    shared.replace(`wp_${id.replace(/-/g, "")}`, id),
+    shared.replace(id.replace(/-/g, ""), "11111111111141118111111111111111"),
+    shared.replace("/view?", "/download?"),
+    shared.replace(`project=${project}`, "project=another-project"),
+    shared.replace(`project=${project}&`, ""),
+    shared.replace("&token=private-token", ""),
+    shared.replace("token=private-token", "token="),
+    `${shared}&project=${project}`,
+    `${shared}&token=another-token`,
+    `${shared}&unexpected=true`,
+    `${shared}#fragment`,
+    `${shared}#`,
+    ` ${shared}`,
+    `${shared}\n`,
+    shared.replace("https://", "https://someone:password@"),
+    shared.replace("/wp_", "/%77p_"),
+    null,
+    undefined,
+  ])
+    assert.equal(matches(invalid), false, String(invalid));
+  assert.equal(wallpaperUrlMatchesPath(shared, jpg, undefined, project), false);
+  assert.equal(
+    wallpaperUrlMatchesPath(shared, jpg, endpoint, undefined),
+    false,
+  );
+  assert.equal(
+    wallpaperUrlMatchesPath(shared, jpg, "not-an-endpoint", project),
+    false,
+  );
+  assert.equal(
+    wallpaperUrlMatchesPath(shared, jpg, endpoint + "?wrong=1", project),
+    false,
+  );
+  assert.equal(matches(shared, `${jpg}\n`), false);
+  assert.equal(
+    matches(old.replace(id, "11111111-1111-4111-8111-111111111111"), legacy),
+    false,
+  );
 });
 
 test("wallpaper prompts keep combined interests beyond the previous 300 character cap", () => {

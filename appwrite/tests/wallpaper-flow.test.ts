@@ -2,6 +2,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
+import { URL as NodeURL } from "node:url";
 import main, { type Context, type Dependencies } from "../function/index";
 import { AIError, type GeneratedWallpaper } from "../function/ai";
 import {
@@ -48,15 +50,20 @@ interface Reply<T = unknown> {
     resetAt?: string;
   };
 }
+const wallpaperJpeg = readFileSync(
+  new NodeURL("../../assets/photos/avatar-alex.jpg", import.meta.url),
+);
 function generated(id = "generated-wallpaper"): GeneratedWallpaper {
-  const image = Buffer.alloc(24);
-  image.write("RIFF", 0);
-  image.writeUInt32LE(16, 4);
-  image.write("WEBP", 8);
-  image.write("VP8 ", 12);
-  image.writeUInt32LE(4, 16);
-  return { theme: { ...presetThemes[1], id, source: "ai" }, image };
+  return {
+    theme: { ...presetThemes[1], id, source: "ai" },
+    image: Buffer.from(wallpaperJpeg),
+  };
 }
+const physicalId = (path: string) =>
+  `wp_${path
+    .split("/")[1]
+    .replace(/\.jpg$/, "")
+    .replace(/-/g, "")}`;
 async function setup() {
   const db = new FakeDatabase(),
     repo = new Repository(db.api, "circle");
@@ -115,11 +122,15 @@ async function setup() {
           bucketId: args.bucketId,
         });
         assert.deepEqual(args.permissions, []);
+        assert.equal(args.bucketId, "circle-media");
+        assert.match(args.fileId, /^wp_[a-f0-9]{32}$/);
+        if (stored.has(args.fileId))
+          throw Object.assign(new Error("File already exists"), { code: 409 });
         const file = {
           $id: args.fileId,
           $permissions: [],
-          mimeType: "image/webp",
-          sizeOriginal: 24,
+          mimeType: "image/jpeg",
+          sizeOriginal: wallpaperJpeg.length,
           chunksUploaded: 1,
           chunksTotal: 1,
         };
@@ -203,6 +214,7 @@ async function setup() {
     const prepared = await raw<{ requestId: string }>(who, {
       ...input,
       kind: "prepareTheme",
+      wallpaperFormat: "jpeg",
     });
     if (prepared.status !== 200) return prepared as unknown as Reply<T>;
     return raw<T>(who, { ...input, requestId: prepared.body.data!.requestId });
@@ -259,8 +271,33 @@ async function setup() {
 }
 const request = (circleId: string) => ({
   kind: "generateTheme",
+  wallpaperFormat: "jpeg",
   circleId,
   prompt: "Pink Barbies, tornadoes and volcanoes",
+});
+test("older browser tabs must refresh before reserving or running JPEG wallpaper generation", async () => {
+  const h = await setup();
+  const legacy: Record<string, unknown> = { ...request(h.circleId) };
+  delete legacy.wallpaperFormat;
+  const rejected = await h.raw(alice, { ...legacy, kind: "prepareTheme" });
+  assert.equal(rejected.status, 409);
+  assert.equal(rejected.body.code, "theme_client_update_required");
+  assert.equal(h.db.rows.has(`ai_quotas/${rowId(alice.$id)}`), false);
+  assert.equal(h.providerCalls, 0);
+  assert.equal(h.storageChecks.length, 0);
+  const prepared = await h.raw<{ requestId: string }>(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+  });
+  const oldWorker = await h.raw(alice, {
+    ...legacy,
+    requestId: prepared.body.data!.requestId,
+  });
+  assert.equal(oldWorker.status, 409);
+  assert.equal(oldWorker.body.code, "theme_client_update_required");
+  assert.equal(h.quota().job?.status, "prepared");
+  assert.equal(h.providerCalls, 0);
+  assert.equal(h.storageChecks.length, 0);
 });
 test("real Appwrite flow stores a private image and permits only requesting manager preview, then current members after apply", async () => {
   const h = await setup();
@@ -271,20 +308,20 @@ test("real Appwrite flow stores a private image and permits only requesting mana
   const theme = response.body.data!;
   assert.match(
     theme.wallpaperPath!,
-    new RegExp(`^${h.circleId}/[a-f0-9-]{36}\\.webp$`),
+    new RegExp(`^${h.circleId}/[a-f0-9-]{36}\\.jpg$`),
   );
-  const fileId = theme.wallpaperPath!.split("/")[1].replace(".webp", "");
+  const fileId = physicalId(theme.wallpaperPath!);
   assert.deepEqual(h.stored.get(fileId)?.$permissions, []);
   assert.equal(h.providerCalls, 1);
   assert.equal(h.storageChecks.length, 1);
-  assert.equal(h.storageChecks[0].bucketId, "circle-wallpapers");
+  assert.equal(h.storageChecks[0].bucketId, "circle-media");
   assert.equal(h.storageChecks[0].total, false);
   assert.deepEqual(
     h.storageChecks[0].queries?.map((query) => JSON.parse(query)),
     [{ method: "limit", values: [1] }],
   );
   assert.deepEqual(h.storageCalls, [
-    { kind: "create", bucketId: "circle-wallpapers", fileId },
+    { kind: "create", bucketId: "circle-media", fileId },
   ]);
   assert.equal(h.quota().successes.length, 1);
   assert.equal(h.quota().pending, undefined);
@@ -311,7 +348,7 @@ test("real Appwrite flow stores a private image and permits only requesting mana
   assert.equal(preview.status, 200);
   assert.match(
     preview.body.data!.url,
-    /circle-wallpapers\/files\/.*token=private-short-lived-token/,
+    /circle-media\/files\/wp_[a-f0-9]{32}\/view\?.*token=private-short-lived-token/,
   );
   const remaining = preview.body.data!.expiresAt - Date.now();
   assert.ok(remaining > 59000 && remaining <= 60000);
@@ -552,6 +589,7 @@ test("an uncertain uncommitted completion saves its warning without deleting the
   const retry = await h.raw(alice, {
     ...request(h.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
   });
   assert.equal(retry.body.code, "theme_in_progress");
   assert.equal(h.providerCalls, 1);
@@ -591,7 +629,7 @@ test("wallpaper signing refuses a changed public ACL and never returns a token f
   const h = await setup();
   const generated = await h.run<CircleTheme>(alice, request(h.circleId));
   const theme = generated.body.data!;
-  const fileId = theme.wallpaperPath!.split("/")[1].replace(".webp", "");
+  const fileId = physicalId(theme.wallpaperPath!);
   h.stored.get(fileId)!.$permissions = ['read("any")'];
   const response = await h.run(alice, {
     kind: "themeWallpaper",
@@ -604,7 +642,11 @@ test("wallpaper signing refuses a changed public ACL and never returns a token f
 
 test("preparing is free, resumes a lost identical reservation, and rejects legacy or mismatched workers before AI", async () => {
   const h = await setup();
-  const input = { ...request(h.circleId), kind: "prepareTheme" };
+  const input = {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
+  };
   const first = await h.raw<{ requestId: string }>(alice, input);
   assert.equal(first.status, 200);
   const requestId = first.body.data!.requestId;
@@ -638,6 +680,7 @@ test("a prepared job can be claimed only once and its result stays private to th
   const prepared = await h.raw<{ requestId: string }>(alice, {
     ...request(h.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
   });
   const requestId = prepared.body.data!.requestId;
   const worker = { ...request(h.circleId), requestId };
@@ -690,6 +733,7 @@ test("saved failures preserve safe provider retry metadata and superseded result
   const prepared = await h.raw<{ requestId: string }>(alice, {
     ...request(h.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
   });
   const requestId = prepared.body.data!.requestId;
   const worker = { ...request(h.circleId), requestId };
@@ -713,6 +757,7 @@ test("saved failures preserve safe provider retry metadata and superseded result
   await h.raw(alice, {
     ...request(h.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
     prompt: "New scenery",
   });
   assert.equal(
@@ -740,6 +785,7 @@ test("missing provider configuration and malformed requests fail during free pre
     const response = await h.raw(alice, {
       ...request(h.circleId),
       kind: "prepareTheme",
+      wallpaperFormat: "jpeg",
     });
     assert.equal(response.status, 503);
     assert.equal(response.body.code, "provider_configuration");
@@ -752,6 +798,7 @@ test("missing provider configuration and malformed requests fail during free pre
   const invalid = await h.raw(alice, {
     ...request(h.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
     prompt: "x",
   });
   assert.equal(invalid.status, 400);
@@ -838,6 +885,7 @@ test("expired prepared jobs cannot execute paid work and uncertain claim commits
   const prepared = await expired.raw<{ requestId: string }>(alice, {
     ...request(expired.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
   });
   const requestId = prepared.body.data!.requestId;
   const quota = expired.quota();
@@ -864,6 +912,7 @@ test("expired prepared jobs cannot execute paid work and uncertain claim commits
   const pending = await uncertain.raw<{ requestId: string }>(alice, {
     ...request(uncertain.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
   });
   const worker = {
     ...request(uncertain.circleId),
@@ -899,6 +948,7 @@ test("a missing wallpaper bucket stops generation before OpenAI, releases its ho
   const prepared = await h.raw<{ requestId: string }>(alice, {
     ...request(h.circleId),
     kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
   });
   assert.equal(prepared.status, 200);
   assert.equal(
@@ -916,7 +966,7 @@ test("a missing wallpaper bucket stops generation before OpenAI, releases its ho
   const failed = await h.raw(alice, { ...request(h.circleId), requestId });
   assert.equal(failed.status, 503);
   assert.equal(failed.body.code, "wallpaper_storage_missing");
-  assert.match(failed.body.error!, /private storage bucket is missing/);
+  assert.match(failed.body.error!, /Circle media bucket is missing/);
   assert.ok(!failed.body.error!.includes("Private SDK response"));
   assert.equal(h.providerCalls, 0);
   assert.equal(h.storageCalls.length, 0);
@@ -1049,5 +1099,365 @@ test("malformed storage availability responses fail closed before any OpenAI wor
     assert.equal(h.stored.size, 0);
     assert.equal(h.quota().pending, undefined);
     assert.equal(h.quota().successes.length, 0);
+  }
+});
+
+test("shared-bucket wallpapers preserve ordinary account media and cannot be reused as uploaded attachments", async () => {
+  const h = await setup();
+  const ordinaryId = "11111111-1111-4111-8111-111111111111";
+  const ordinary = {
+    $id: ordinaryId,
+    $permissions: [],
+    mimeType: "image/jpeg",
+    sizeOriginal: 512,
+    chunksUploaded: 1,
+    chunksTotal: 1,
+  };
+  h.stored.set(ordinaryId, structuredClone(ordinary));
+  const upload = record(
+    "uploads",
+    ordinaryId,
+    {
+      owner: alice.$id,
+      mediaType: "image",
+      ready: true,
+      createdAt: Date.now(),
+    },
+    "",
+    alice.$id,
+    "ready",
+  );
+  h.db.seed(upload.table, upload.id, upload.data);
+  const post = await h.raw<Result>(alice, {
+    kind: "action",
+    action: {
+      type: "createPost",
+      input: {
+        circleId: h.circleId,
+        content: "An existing account photo",
+        media: `awfile:${ordinaryId}`,
+        mediaType: "image",
+      },
+    },
+  });
+  assert.equal(post.body.data?.ok, true);
+  const response = await h.run<CircleTheme>(alice, request(h.circleId));
+  assert.equal(response.status, 200);
+  const wallpaperId = physicalId(response.body.data!.wallpaperPath!);
+  assert.notEqual(wallpaperId, ordinaryId);
+  assert.match(wallpaperId, /^wp_[a-f0-9]{32}$/);
+  assert.equal(wallpaperId.length, 35);
+  assert.deepEqual(h.stored.get(ordinaryId), ordinary);
+  const originalPost = [...h.db.rows.values()].find(
+    (row) => row.entity_id === post.body.data!.id,
+  )!;
+  assert.equal(JSON.parse(originalPost.data).media, `awfile:${ordinaryId}`);
+  for (const action of [
+    {
+      type: "createPost",
+      input: {
+        circleId: h.circleId,
+        content: "Forged wallpaper attachment",
+        media: `awfile:${wallpaperId}`,
+        mediaType: "image",
+      },
+    },
+  ]) {
+    const rejected = await h.raw(alice, { kind: "action", action });
+    assert.equal(rejected.status, 400);
+    assert.equal(rejected.body.data, undefined);
+  }
+  for (const kind of ["cancelUpload", "finishUpload"]) {
+    assert.equal(
+      (await h.raw(alice, { kind, fileId: wallpaperId })).status,
+      400,
+    );
+  }
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+  assert.deepEqual(h.stored.get(ordinaryId), ordinary);
+  const tokenCount = h.tokenCalls.length;
+  assert.notEqual(
+    (
+      await h.raw(alice, {
+        kind: "themeWallpaper",
+        wallpaperPath: `${h.circleId}/${ordinaryId}.jpg`,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(h.tokenCalls.length, tokenCount);
+});
+
+test("a conflicting wallpaper file is never overwritten or deleted after an unsuccessful create", async () => {
+  const h = await setup();
+  const prepared = await h.raw<{ requestId: string }>(alice, {
+    ...request(h.circleId),
+    kind: "prepareTheme",
+    wallpaperFormat: "jpeg",
+  });
+  const requestId = prepared.body.data!.requestId;
+  const fileId = `wp_${requestId.replace(/-/g, "")}`;
+  const preexisting = {
+    $id: fileId,
+    $permissions: ['read("user:bob")', 'delete("user:bob")'],
+    mimeType: "image/jpeg",
+    sizeOriginal: 123,
+    chunksUploaded: 1,
+    chunksTotal: 1,
+  };
+  h.stored.set(fileId, structuredClone(preexisting));
+  const failed = await h.raw(alice, { ...request(h.circleId), requestId });
+  assert.equal(failed.status, 507);
+  assert.equal(failed.body.code, "storage_limit");
+  assert.equal(h.providerCalls, 1);
+  assert.deepEqual(h.stored.get(fileId), preexisting);
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+  assert.equal(h.quota().successes.length, 0);
+  assert.equal(h.quota().pending, undefined);
+});
+
+test("an unconfirmed create response keeps the private artifact without deleting any existing media", async () => {
+  const h = await setup();
+  const create = h.wallpaper.storage.createFile;
+  h.wallpaper.storage.createFile = async (args) => {
+    if (typeof args === "string")
+      throw new Error("Expected object SDK parameters");
+    await create(args);
+    throw new Error(
+      "The create response was lost after storage accepted the file",
+    );
+  };
+  const failed = await h.run(alice, request(h.circleId));
+  assert.equal(failed.status, 507);
+  assert.equal(failed.body.code, "storage_limit");
+  assert.equal(h.providerCalls, 1);
+  assert.equal(h.stored.size, 1);
+  assert.ok(
+    [...h.stored.values()].every((file) => file.$permissions.length === 0),
+  );
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+  assert.equal(h.quota().successes.length, 0);
+});
+
+test("legacy WebP wallpapers still use their original private bucket and membership rules", async () => {
+  const h = await setup();
+  await h.join(bob);
+  const legacyId = "22222222-2222-4222-8222-222222222222";
+  const theme: CircleTheme = {
+    ...presetThemes[1],
+    id: "legacy-wallpaper",
+    source: "ai",
+    wallpaperPath: `${h.circleId}/${legacyId}.webp`,
+  };
+  const saved = record("themes", h.circleId, theme, h.circleId);
+  h.db.seed(saved.table, saved.id, saved.data);
+  h.stored.set(legacyId, {
+    $id: legacyId,
+    $permissions: [],
+    mimeType: "image/webp",
+    sizeOriginal: 24,
+    chunksUploaded: 1,
+    chunksTotal: 1,
+  });
+  const response = await h.raw<{ url: string; expiresAt: number }>(bob, {
+    kind: "themeWallpaper",
+    wallpaperPath: theme.wallpaperPath,
+  });
+  assert.equal(response.status, 200);
+  assert.match(
+    response.body.data!.url,
+    /\/storage\/buckets\/circle-wallpapers\/files\/22222222-2222-4222-8222-222222222222\/view\?/,
+  );
+  assert.deepEqual(h.storageCalls, [
+    { kind: "get", bucketId: "circle-wallpapers", fileId: legacyId },
+  ]);
+  assert.equal(h.tokenCalls[0].bucketId, "circle-wallpapers");
+  assert.equal(h.tokenCalls[0].fileId, legacyId);
+  assert.equal(h.providerCalls, 0);
+  const tokens = h.tokenCalls.length;
+  assert.notEqual(
+    (
+      await h.raw(eve, {
+        kind: "themeWallpaper",
+        wallpaperPath: theme.wallpaperPath,
+      })
+    ).status,
+    200,
+  );
+  await h.mutate(alice, {
+    kind: "action",
+    action: { type: "removeMember", circleId: h.circleId, userId: bob.$id },
+  });
+  assert.notEqual(
+    (
+      await h.raw(bob, {
+        kind: "themeWallpaper",
+        wallpaperPath: theme.wallpaperPath,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(h.tokenCalls.length, tokens);
+});
+
+test("a new wallpaper path never falls back to an ordinary UUID file or the legacy bucket", async () => {
+  const h = await setup();
+  const generated = await h.run<CircleTheme>(alice, request(h.circleId));
+  const theme = generated.body.data!;
+  const requestId = theme.wallpaperPath!.split("/")[1].replace(/\.jpg$/, "");
+  const fileId = physicalId(theme.wallpaperPath!);
+  h.stored.delete(fileId);
+  h.stored.set(requestId, {
+    $id: requestId,
+    $permissions: [],
+    mimeType: "image/jpeg",
+    sizeOriginal: wallpaperJpeg.length,
+    chunksUploaded: 1,
+    chunksTotal: 1,
+  });
+  const calls = h.storageCalls.length;
+  const failed = await h.raw(alice, {
+    kind: "themeWallpaper",
+    wallpaperPath: theme.wallpaperPath,
+  });
+  assert.notEqual(failed.status, 200);
+  assert.equal(h.tokenCalls.length, 0);
+  assert.deepEqual(h.storageCalls.slice(calls), [
+    { kind: "get", bucketId: "circle-media", fileId },
+  ]);
+  assert.ok(h.stored.has(requestId));
+});
+
+test("a create response naming an unrelated account file cannot authorize deleting that file", async () => {
+  const h = await setup();
+  const fileId = "33333333-3333-4333-8333-333333333333";
+  const ordinary = {
+    $id: fileId,
+    $permissions: [],
+    mimeType: "image/jpeg",
+    sizeOriginal: wallpaperJpeg.length,
+    chunksUploaded: 1,
+    chunksTotal: 1,
+  };
+  h.stored.set(fileId, structuredClone(ordinary));
+  h.wallpaper.storage.createFile = async () =>
+    ordinary as unknown as Awaited<
+      ReturnType<WallpaperServices["storage"]["createFile"]>
+    >;
+  const failed = await h.run(alice, request(h.circleId));
+  assert.equal(failed.status, 507);
+  assert.equal(failed.body.code, "storage_limit");
+  assert.deepEqual(h.stored.get(fileId), ordinary);
+  assert.equal(h.stored.size, 1);
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+  assert.equal(h.quota().successes.length, 0);
+});
+
+test("invalid metadata after a confirmed create removes only that new wallpaper artifact", async () => {
+  const h = await setup();
+  const ordinaryId = "44444444-4444-4444-8444-444444444444";
+  const ordinary = {
+    $id: ordinaryId,
+    $permissions: [],
+    mimeType: "image/jpeg",
+    sizeOriginal: 999,
+    chunksUploaded: 1,
+    chunksTotal: 1,
+  };
+  h.stored.set(ordinaryId, structuredClone(ordinary));
+  const create = h.wallpaper.storage.createFile;
+  h.wallpaper.storage.createFile = async (args) => {
+    if (typeof args === "string")
+      throw new Error("Expected object SDK parameters");
+    const created = await create(args);
+    return { ...created, $permissions: ['read("any")'] };
+  };
+  const failed = await h.run(alice, request(h.circleId));
+  assert.equal(failed.status, 507);
+  assert.equal(h.stored.size, 1);
+  assert.deepEqual(h.stored.get(ordinaryId), ordinary);
+  const created = h.storageCalls.find((call) => call.kind === "create")!;
+  assert.match(created.fileId, /^wp_[a-f0-9]{32}$/);
+  assert.deepEqual(
+    h.storageCalls.filter((call) => call.kind === "delete"),
+    [{ kind: "delete", bucketId: "circle-media", fileId: created.fileId }],
+  );
+  assert.equal(h.quota().successes.length, 0);
+});
+
+test("signing refuses returned metadata for a different file before issuing a token", async () => {
+  const h = await setup();
+  const generated = await h.run<CircleTheme>(alice, request(h.circleId));
+  assert.equal(generated.status, 200);
+  const theme = generated.body.data!;
+  const get = h.wallpaper.storage.getFile;
+  h.wallpaper.storage.getFile = async (args) => {
+    if (typeof args === "string")
+      throw new Error("Expected object SDK parameters");
+    return {
+      ...(await get(args)),
+      $id: "55555555-5555-4555-8555-555555555555",
+    };
+  };
+  const failed = await h.raw(alice, {
+    kind: "themeWallpaper",
+    wallpaperPath: theme.wallpaperPath,
+  });
+  assert.equal(failed.status, 503);
+  assert.equal(failed.body.code, "wallpaper_unavailable");
+  assert.equal(h.tokenCalls.length, 0);
+  assert.ok(!h.storageCalls.some((call) => call.kind === "delete"));
+});
+
+test("wallpapers require positive integer completed-chunk metadata before storage completion or signing", async () => {
+  for (const count of [0, undefined, 1.5]) {
+    const stored = await setup();
+    const create = stored.wallpaper.storage.createFile;
+    stored.wallpaper.storage.createFile = async (args) => {
+      if (typeof args === "string")
+        throw new Error("Expected object SDK parameters");
+      const file = await create(args);
+      return {
+        ...file,
+        chunksTotal: count,
+        chunksUploaded: count,
+      } as unknown as typeof file;
+    };
+    const rejectedCreate = await stored.run(alice, request(stored.circleId));
+    assert.equal(rejectedCreate.status, 507);
+    assert.equal(stored.stored.size, 0);
+    const created = stored.storageCalls.find((call) => call.kind === "create")!;
+    assert.deepEqual(
+      stored.storageCalls.filter((call) => call.kind === "delete"),
+      [{ kind: "delete", bucketId: "circle-media", fileId: created.fileId }],
+    );
+    assert.equal(stored.quota().successes.length, 0);
+
+    const signed = await setup();
+    const generated = await signed.run<CircleTheme>(
+      alice,
+      request(signed.circleId),
+    );
+    assert.equal(generated.status, 200);
+    const get = signed.wallpaper.storage.getFile;
+    signed.wallpaper.storage.getFile = async (args) => {
+      if (typeof args === "string")
+        throw new Error("Expected object SDK parameters");
+      const file = await get(args);
+      return {
+        ...file,
+        chunksTotal: count,
+        chunksUploaded: count,
+      } as unknown as typeof file;
+    };
+    const rejectedRead = await signed.raw(alice, {
+      kind: "themeWallpaper",
+      wallpaperPath: generated.body.data!.wallpaperPath,
+    });
+    assert.equal(rejectedRead.status, 503);
+    assert.equal(rejectedRead.body.code, "wallpaper_unavailable");
+    assert.equal(signed.tokenCalls.length, 0);
+    assert.equal(signed.stored.size, 1);
+    assert.ok(!signed.storageCalls.some((call) => call.kind === "delete"));
   }
 });

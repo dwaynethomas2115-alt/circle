@@ -8,15 +8,15 @@ Photo posts can contain up to ten photographs or one video. The composer support
 
 The website changes publish through the existing GitHub `main` → Vercel `dwayne7/circle` connection. Keep its four Production public Appwrite variables and registered hostname `circle-rho-smoky.vercel.app`. The authenticated header now reads **Private space**; the separate local demo remains explicitly labeled **LOCAL DEMO**.
 
-Multiple-photo posting needs the latest **`circle-api`** Function, too. The last deployment confirmed by Dot was **`6ae4c4c3e1e38ec870b5`**, from **`30c28ff03e6373086af67fb2bd8742a47d423a47`**. That version contains the wallpaper response fix and supports existing single-media posts; it predates albums. Before uploading an album, the new client checks `mediaCapabilities`. An older Function returns a clear server-update message and preserves the draft without uploading its files.
+Multiple-photo posting needs the latest **`circle-api`** Function, too. Dot subsequently confirmed album-capable deployment **`6ae59cd6da3487b42096`** from **`c6eb238`**, then OpenAI-diagnosis deployment **`6ae5c5f6876bd6211b25`** from **`b9ed85b`**. Those hosted reports do not establish authenticated album or wallpaper success. Before uploading an album, the new client checks `mediaCapabilities`. An older Function returns a clear server-update message and preserves the draft without uploading its files.
 
 Deploy the current committed `appwrite/function/main.js`, `package.json`, and `package-lock.json` to the **existing** Appwrite project **`6ae3ee7000368dcb80e7`**, Function **`circle-api`**. Dot's previous manual archive method remains suitable. Use the saved **Node.js 22**, entrypoint **`main.js`**, build command **`npm ci --omit=dev`**, timeout **180 seconds**. Retain the current database, variables, authenticated-user execution permission, and existing dynamic key scopes. This change needs no new table, column, bucket, credential, or permission. Git integration is optional and was not granted in the previous deployment.
 
 Albums use the existing **`circle-media`** bucket. The Function validates every attachment's ownership, completed upload, format, and readiness. It signs only media in authorized snapshots and records all album references so cleanup cannot delete a non-cover photo. Every upload finishes before the single post is committed. If a later upload or publication fails, the draft remains and no partial post is published; already sealed unreferenced files remain private until the existing administrator cleanup runs.
 
-## Existing wallpaper blocker
+## Shared wallpaper storage follow-up
 
-Dot reported that the Free project permits only one bucket, already used by `circle-media`; `circle-wallpapers` could not be created. This design/album update does not change wallpaper storage, permissions, or plans and does not resolve that separate blocker. See the [wallpaper status](WALLPAPER_DEPLOYMENT.md). No live AI generation is needed to deploy or verify photo albums.
+Dot reported that the Free project permits only one bucket, already used by `circle-media`; the old `circle-wallpapers` requirement could not be met. Dwayne later approved using the same bucket. The [shared-bucket JPEG update](SHARED_WALLPAPER_STORAGE.md) removes the second-bucket requirement without changing extensions, permissions, or the plan. It needs matching server/client deployment and does not establish OpenAI access. No live AI generation is needed to deploy or verify photo albums.
 
 ## Verification
 

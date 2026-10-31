@@ -3,7 +3,7 @@ import { AppState } from "react-native";
 import { invokeCircle } from "../lib/appwrite";
 import { useCircle } from "../state/CircleProvider";
 import { useCircleFeatures } from "./CircleFeaturesProvider";
-import { wallpaperCircleId } from "./themes";
+import { wallpaperCircleId, wallpaperUrlMatchesPath } from "./themes";
 import type { CircleTheme } from "./types";
 
 interface WallpaperState {
@@ -68,14 +68,12 @@ export function useThemeWallpaper(theme?: CircleTheme): {
           wallpaperPath: path,
         });
         if (!alive || request !== sequence) return;
-        const configured = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
-        const imageUrl = new URL(data.url);
         if (
-          !configured ||
-          imageUrl.protocol !== "https:" ||
-          imageUrl.origin !== new URL(configured).origin ||
-          !/\/storage\/buckets\/circle-wallpapers\/files\/[0-9a-f-]{36}\/view$/i.test(
-            imageUrl.pathname,
+          !wallpaperUrlMatchesPath(
+            data.url,
+            path,
+            process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT,
+            process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID,
           ) ||
           !Number.isFinite(data.expiresAt) ||
           data.expiresAt <= Date.now()

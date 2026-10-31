@@ -184,31 +184,8 @@ async function main() {
       });
     }
   }
-  // Wallpaper creation and token delivery are server-only; no client bucket ACL.
-  try {
-    const bucket = await storage.getBucket({ bucketId: "circle-wallpapers" });
-    if (
-      !bucket.fileSecurity ||
-      bucket.$permissions.length ||
-      bucket.maximumFileSize !== 10_485_760 ||
-      JSON.stringify(bucket.allowedFileExtensions) !== JSON.stringify(["webp"])
-    )
-      throw new Error(
-        "Existing wallpaper bucket has incompatible settings; inspect it manually. No wallpaper permissions were changed.",
-      );
-  } catch (e) {
-    if ((e as { code?: number }).code !== 404) throw e;
-    await storage.createBucket({
-      bucketId: "circle-wallpapers",
-      name: "Circle AI wallpapers",
-      permissions: [],
-      fileSecurity: true,
-      maximumFileSize: 10_485_760,
-      allowedFileExtensions: ["webp"],
-      encryption: true,
-      antivirus: true,
-    });
-  }
+  // JPEG wallpapers share circle-media with namespaced, server-private file IDs.
+  // No second bucket is required; an existing legacy bucket is left untouched.
   console.log(
     "Normalized schema created/verified. Wait for all indexes to become available before enabling the Function. No data imported; circle_state was left untouched.",
   );
