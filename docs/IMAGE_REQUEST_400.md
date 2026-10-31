@@ -64,15 +64,27 @@ Identify the OpenAI project associated with the existing server key using owner 
 
 **One proposed replacement for approval:** `gpt-image-2.5-sunburst`, keeping `output_format=jpeg`, `size=1536x1024`, `quality=medium`, `output_compression=85`, and `background=opaque`. The pinned official model documentation explicitly recommends this model and documents these options. This is a compatibility recommendation, not a verified least-cost choice. Do not save it as configuration during this diagnosis.
 
-**Current official price is still required before a cost-informed approval.** The managed environment permits OpenAI's GitHub repositories but blocks the official pricing host: a normal proxied GET of `https://developers.openai.com/api/docs/pricing` returned HTTP 403. Reviewed current OpenAI OpenAPI, SDK, and cookbook sources did not contain a numerical price for this choice. Dot should copy the current official price for this model at medium quality and 1536x1024, its billing unit/currency, any separate prompt-input charges, and source URL/date from the [official API pricing](https://developers.openai.com/api/docs/pricing) page. Do not substitute old `gpt-image-1` pricing, infer the cost from another model, or run a generation to measure cost. No numerical price has been verified in this task.
+**Official standard token pricing, verified by Dot and supplied by Dwayne on October 31, 2026:** the [OpenAI `gpt-image-2.5-sunburst` model page](https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst) lists:
 
-The reviewed OpenAPI and SDK sources do not contain a current numerical pricing table. This workspace's enforced network policy permits their official GitHub repositories but does not list `openai.com`, `developers.openai.com`, or `platform.openai.com`, where current OpenAI pricing is published. No price for the older model, another model, another image size, or another quality level should be treated as the price for a replacement. Check [OpenAI's current API pricing](https://openai.com/api/pricing/) for the selected model and the `1536x1024`, `medium` output before asking Dwayne to approve it. Input/palette charges can be additional to an image-output price. No pricing page or provider endpoint was accessed through a policy bypass.
+| Billing category | USD per 1 million tokens |
+| ---------------- | ------------------------ |
+| Text input       | $5                       |
+| Image input      | $8                       |
+| Image output     | $30                      |
 
-Dwayne must separately approve a specific supported image-model choice, saving that non-secret `OPENAI_THEME_IMAGE_MODEL` setting in Appwrite, and deploying the prepared server update. Keep `OPENAI_THEME_MODEL=gpt-6-luna`, the existing secret key, database, storage, permissions, billing, and plan unchanged. If access would require another account, billing, credential, permission, or verification action, report that action for separate coordination instead of performing it.
+These are token rates, not prices per wallpaper. The current generation request supplies text rather than an input image; the image-input rate is included for completeness. The existing, separate Luna palette request can add its own charges, which these image-model rates do not cover.
+
+The model page explicitly says these token rates match GPT Image 2, but the GPT Image 2 calculator does **not** estimate GPT Image 2.5 token consumption. There is no verified fixed per-image price for `medium` at `1536x1024`. Total wallpaper cost varies with billable token usage, so do not derive a per-image estimate from another model's calculator or old price table. No generation was run to measure cost.
+
+This pricing evidence is Dot's read-only official-page verification relayed by Dwayne, not an independent page fetch from this workspace. The earlier normal proxied pricing-page GET returned HTTP 403; no network-policy change or bypass was used. The recommendation is now supported by official compatibility documentation and the supplied current token rates, with the per-wallpaper cost limitation explicit. It does not establish this OpenAI project's model access, actual generation cost, or successful hosted generation.
+
+Dwayne must still separately approve the proposed `gpt-image-2.5-sunburst` choice with variable token billing, saving that non-secret `OPENAI_THEME_IMAGE_MODEL` setting in Appwrite, and deploying the prepared server update. Supplying pricing does not approve any of these actions. Keep `OPENAI_THEME_MODEL=gpt-6-luna`, the existing secret key, database, storage, permissions, billing, and plan unchanged. If access would require another account, billing, credential, permission, or verification action, report that action for separate coordination instead of performing it.
 
 No live generation or retry is required to inspect documentation, configuration, or deployment status. A later paid generation test needs its own authorization.
 
 ## Local verification
+
+The code correction and rebuilt bundle are in local commit `93cfd6859e1c0359e1d7d4e1fb31541423e40af9`. The following checks were completed for that code; this pricing follow-up changes documentation only.
 
 - `npm run test:appwrite`: 80 passed, zero failed or skipped; provider requests use injected mocks.
 - `npm test`: 87 passed, zero failed or skipped.
