@@ -23,7 +23,7 @@ const motifs: Record<CircleTheme["motif"], LucideIcon[]> = {
   minimal: [],
 };
 
-/** Full-strength wallpaper; text and controls use their own readable surfaces. */
+/** Repeat the wallpaper at a natural scale so long journals keep small motifs. */
 export function ThemeDecoration({
   theme,
   compact = false,
@@ -53,8 +53,9 @@ export function ThemeDecoration({
     >
       {hasImage && (
         <Image
+          testID="circle-wallpaper-pattern"
           source={{ uri }}
-          resizeMode="cover"
+          resizeMode="repeat"
           style={StyleSheet.absoluteFill}
           onLoad={onLoad}
           onError={() => {

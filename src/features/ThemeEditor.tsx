@@ -202,9 +202,9 @@ export function ThemeEditor({ circleId }: { circleId: string }) {
           </T>
         </View>
         <T style={{ color: colors.muted, lineHeight: 23 }}>
-          Bring your Circle to life. Describe everyone’s favorite colors,
-          characters, places, and things—we’ll blend them into a colorful
-          wallpaper made just for you.
+          Pick a background color and tell us everyone’s favorite things. We’ll
+          make a simple wallpaper with small, spaced-out illustrations around
+          your Circle’s photos and stories.
         </T>
         {externalChange && (
           <View style={{ alignItems: "flex-start", gap: 8 }}>
@@ -228,7 +228,7 @@ export function ThemeEditor({ circleId }: { circleId: string }) {
         <Field
           label="Theme prompt"
           editable={!busy}
-          placeholder="Anastasia loves pink and Barbie, and Daelin loves tornadoes and volcanoes. Make it bright and playful…"
+          placeholder="A solid pink background with small Barbie dolls and tornadoes spaced out across it…"
           value={prompt}
           onChangeText={setPrompt}
           multiline
@@ -352,7 +352,7 @@ function WallpaperPreview({
         <View style={{ alignItems: "flex-start" }}>
           <View
             style={{
-              backgroundColor: "#FFFFFFF2",
+              backgroundColor: theme.surface,
               paddingHorizontal: 12,
               paddingVertical: 8,
               borderRadius: 20,
@@ -365,15 +365,13 @@ function WallpaperPreview({
             <T
               style={{ color: theme.ink, fontSize: 11, fontFamily: font.bold }}
             >
-              {applied
-                ? "Your Circle’s wallpaper"
-                : "A world made for your Circle"}
+              {applied ? "Your Circle’s wallpaper" : "Your journal’s wallpaper"}
             </T>
           </View>
         </View>
         <View
           style={{
-            backgroundColor: "#FFFFFFF2",
+            backgroundColor: theme.surface,
             padding: 20,
             borderRadius: 17,
             gap: 12,
@@ -385,7 +383,8 @@ function WallpaperPreview({
             {circleName}
           </T>
           <T style={{ color: theme.ink, lineHeight: 22 }}>
-            Your people. Your moments. A world that feels like all of you.
+            Your photos and stories sit on clean cards, with your wallpaper
+            around them.
           </T>
           <View style={{ alignItems: "flex-start", gap: 8 }}>
             <Button

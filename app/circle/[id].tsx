@@ -55,7 +55,11 @@ import { CalendarPanel } from "../../src/features/CalendarPanel";
 import { HighlightsPanel } from "../../src/features/HighlightsPanel";
 import { ThemeEditor } from "../../src/features/ThemeEditor";
 import { CircleRoom } from "../../src/features/room/CircleRoom";
-import { useCircleTheme, themeTint } from "../../src/features/theme-context";
+import {
+  useCircleTheme,
+  useCircleWallpaper,
+  themeTint,
+} from "../../src/features/theme-context";
 type Tab =
   "Feed" | "Highlights" | "Chat" | "Members" | "About" | "Settings" | "Reports";
 type CircleSurface = "calendar" | "room" | null;
@@ -121,6 +125,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const { state, user, feed, actions } = useCircle();
   const features = useCircleFeatures();
   const theme = useCircleTheme();
+  const hasWallpaper = !!useCircleWallpaper().uri;
   const palette = {
     ...c,
     teal: theme.accent,
@@ -313,7 +318,17 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   return (
     <View style={{ gap: compactConversation ? 14 : 26 }}>
       {!compactConversation && (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+        <View
+          style={[
+            { flexDirection: "row", alignItems: "center", gap: 9 },
+            hasWallpaper && {
+              backgroundColor: palette.white,
+              borderRadius: 12,
+              paddingRight: 14,
+              alignSelf: "flex-start",
+            },
+          ]}
+        >
           <IconButton
             icon={ArrowLeft}
             label="Back to Circles"
@@ -730,13 +745,20 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           {surface && (
             <View style={{ gap: 20 }}>
               <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 14,
-                  flexWrap: "wrap",
-                }}
+                style={[
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 14,
+                    flexWrap: "wrap",
+                  },
+                  hasWallpaper && {
+                    backgroundColor: palette.white,
+                    padding: 16,
+                    borderRadius: 16,
+                  },
+                ]}
               >
                 <View
                   style={{
@@ -777,7 +799,16 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           )}
           {!surface && tab === "Feed" && (
             <View style={s.journal}>
-              <View style={s.journalHeading}>
+              <View
+                style={[
+                  s.journalHeading,
+                  hasWallpaper && {
+                    backgroundColor: palette.white,
+                    padding: 16,
+                    borderRadius: 16,
+                  },
+                ]}
+              >
                 <View style={{ gap: 6 }}>
                   <T style={{ fontFamily: font.heading, fontSize: 21 }}>
                     Circle journal
@@ -855,7 +886,17 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   {(index === 0 ||
                     monthKey(post.createdAt) !==
                       monthKey(journal[index - 1].createdAt)) && (
-                    <View style={s.chapterHeading}>
+                    <View
+                      style={[
+                        s.chapterHeading,
+                        hasWallpaper && {
+                          backgroundColor: palette.white,
+                          padding: 12,
+                          borderRadius: 12,
+                          marginBottom: 14,
+                        },
+                      ]}
+                    >
                       <T
                         style={{
                           fontFamily: font.medium,
@@ -879,7 +920,16 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 </View>
               ))}
               {!!posts.length && (
-                <View style={s.journalFootnote}>
+                <View
+                  style={[
+                    s.journalFootnote,
+                    hasWallpaper && {
+                      backgroundColor: palette.white,
+                      borderRadius: 12,
+                      paddingVertical: 12,
+                    },
+                  ]}
+                >
                   <Lock size={12} color={palette.muted} />
                   <T
                     style={{

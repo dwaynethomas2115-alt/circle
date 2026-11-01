@@ -310,7 +310,6 @@ function ThemedShell({
         </View>
       )}
       <View style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-        {decorated && <ThemeDecoration />}
         <View
           style={[
             s.topbar,
@@ -419,78 +418,25 @@ function ThemedShell({
           style={{ flex: 1 }}
         >
           <View style={{ width: "100%", maxWidth: 1160, alignSelf: "center" }}>
-            {hasWallpaper && (
-              <View
-                testID="circle-wallpaper-hero"
-                style={{
-                  minHeight: wide ? 220 : 180,
-                  marginBottom: 24,
-                  borderRadius: 22,
-                  borderWidth: 1,
-                  borderColor: "#FFFFFF88",
-                  justifyContent: "flex-end",
-                  alignItems: "flex-start",
-                  padding: wide ? 24 : 18,
-                }}
-              >
-                <View
-                  style={{
-                    maxWidth: "100%",
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    borderRadius: 15,
-                    backgroundColor: "#FFFFFFF2",
-                    gap: 5,
-                  }}
-                >
-                  <T
-                    style={{
-                      color: theme.accent,
-                      fontSize: 9,
-                      letterSpacing: 1.3,
-                      fontFamily: font.bold,
-                    }}
-                  >
-                    MADE FOR YOUR CIRCLE
-                  </T>
-                  <T
-                    style={{
-                      fontFamily: font.heading,
-                      fontSize: wide ? 22 : 19,
-                    }}
-                  >
-                    {theme.label}
-                  </T>
-                </View>
-              </View>
-            )}
             <View
+              testID={hasWallpaper ? "circle-wallpaper-frame" : undefined}
               style={
                 hasWallpaper
                   ? {
-                      backgroundColor: "#FFFFFFF2",
+                      backgroundColor: theme.background,
                       borderRadius: 22,
-                      paddingVertical: 16,
-                      paddingHorizontal: wide ? 18 : 8,
+                      overflow: "hidden",
+                      paddingVertical: wide ? 24 : 16,
+                      paddingHorizontal: wide ? 24 : 12,
                     }
                   : undefined
               }
             >
+              {hasWallpaper && <ThemeDecoration />}
               <PageMotion path={path}>{children}</PageMotion>
             </View>
           </View>
-          <View
-            style={[
-              s.footer,
-              hasWallpaper && {
-                alignSelf: "center",
-                backgroundColor: theme.surface,
-                paddingHorizontal: 14,
-                paddingVertical: 9,
-                borderRadius: 12,
-              },
-            ]}
-          >
+          <View style={s.footer}>
             <LockKeyhole size={11} color="#A8B3AA" />
             <T
               style={{

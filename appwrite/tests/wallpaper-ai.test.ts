@@ -89,7 +89,7 @@ function harness({
   };
   return { calls, transport };
 }
-test("AI wallpaper combines every requested interest and sends only explicit visual text plus fixed instructions", async () => {
+test("AI wallpaper requests a simple spaced pattern of every interest and sends only explicit visual text plus fixed instructions", async () => {
   const h = harness();
   const prompt =
     "Anastasia likes pink and Barbies, and Daelin likes tornadoes and volcanoes";
@@ -130,6 +130,16 @@ test("AI wallpaper combines every requested interest and sends only explicit vis
   assert.match(
     request.prompt,
     /ALL requested interests and ALL requested subjects/,
+  );
+  assert.match(request.prompt, /one flat, uniform solid background color/i);
+  assert.match(
+    request.prompt,
+    /small, clearly recognizable individual illustrations/i,
+  );
+  assert.match(request.prompt, /generous empty space between illustrations/i);
+  assert.doesNotMatch(
+    request.prompt,
+    /one cohesive, imaginative scene|richly colored illustrated details across the whole canvas/i,
   );
   assert.ok(request.prompt.endsWith(prompt));
   for (const call of h.calls) {
