@@ -30,6 +30,7 @@ import {
   BarChart3,
   ArrowDownUp,
   BookOpen,
+  Camera,
 } from "lucide-react-native";
 import { useCircle } from "../../src/state/CircleProvider";
 import { visibleMessages } from "../../src/state/model";
@@ -47,6 +48,7 @@ import {
 } from "../../src/ui/primitives";
 import { PostCard } from "../../src/ui/PostCard";
 import { InviteSheet } from "../../src/ui/InviteSheet";
+import { CircleCoverEditor } from "../../src/ui/CircleCoverEditor";
 import { colors as c, font } from "../../src/ui/theme";
 import type { Result } from "../../src/types";
 import { PollsPanel } from "../../src/features/PollsPanel";
@@ -152,6 +154,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const [memoryMonth, setMemoryMonth] = useState("all");
   const [oldestFirst, setOldestFirst] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [coverEditorOpen, setCoverEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
@@ -162,6 +165,9 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const members = state.members.filter((x) => x.circleId === id);
   const compactConversation = !!membership && tab === "Chat";
   const isManager = membership && ["owner", "admin"].includes(membership.role);
+  useEffect(() => {
+    if (!isManager) setCoverEditorOpen(false);
+  }, [isManager]);
   const isModerator =
     membership && ["owner", "admin", "moderator"].includes(membership.role);
   const pending = state.requests.filter(
@@ -229,16 +235,21 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
     circle?.discoverable || false,
   );
   const [approval, setApproval] = useState(circle?.approvalRequired ?? true);
+  const savedName = circle?.name,
+    savedDescription = circle?.description,
+    savedDiscoverable = circle?.discoverable,
+    savedApproval = circle?.approvalRequired;
   const chatScroll = useRef<ScrollView>(null);
   const chatNearBottom = useRef(true);
   useEffect(() => {
-    if (circle) {
-      setEditName(circle.name);
-      setEditDescription(circle.description);
-      setDiscoverable(circle.discoverable);
-      setApproval(circle.approvalRequired);
+    // Saving a cover refreshes the Circle row without erasing other settings drafts.
+    if (savedName !== undefined) {
+      setEditName(savedName);
+      setEditDescription(savedDescription || "");
+      setDiscoverable(savedDiscoverable || false);
+      setApproval(savedApproval ?? true);
     }
-  }, [circle]);
+  }, [savedName, savedDescription, savedDiscoverable, savedApproval]);
   async function handle(promise: Result | Promise<Result>, success: string) {
     const result = await promise;
     setNotice(
@@ -313,6 +324,12 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
     );
   return (
     <View style={{ gap: compactConversation ? 14 : 26 }}>
+      <CircleCoverEditor
+        visible={coverEditorOpen}
+        onClose={() => setCoverEditorOpen(false)}
+        circleId={id}
+        onSaved={() => setNotice("Your Circle cover photo has been updated.")}
+      />
       <InviteSheet
         visible={inviteOpen}
         onClose={() => setInviteOpen(false)}
@@ -452,6 +469,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
             >
               {circle.cover ? (
                 <Image
+                  testID="circle-cover-image"
                   source={{ uri: circle.cover }}
                   style={{ height: "100%", width: "100%" }}
                 />
@@ -480,6 +498,33 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   PRIVATE CIRCLE
                 </T>
               </View>
+              {isManager && (
+                <Pressable
+                  testID="circle-cover-change"
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    circle.cover ? "Change cover photo" : "Add cover photo"
+                  }
+                  accessibilityHint="Choose a new header photo for this Circle"
+                  onPress={() => setCoverEditorOpen(true)}
+                  style={({ pressed }) => [
+                    StyleSheet.absoluteFill,
+                    {
+                      alignItems: "flex-end",
+                      justifyContent: "flex-end",
+                      padding: width < 650 ? 12 : 18,
+                      backgroundColor: pressed ? "#00000012" : "transparent",
+                    },
+                  ]}
+                >
+                  <View pointerEvents="none" style={s.coverEditLabel}>
+                    <Camera size={16} color={palette.ink} />
+                    <T style={{ fontFamily: font.bold, fontSize: 12 }}>
+                      {circle.cover ? "Change cover photo" : "Add cover photo"}
+                    </T>
+                  </View>
+                </Pressable>
+              )}
             </View>
             <View style={{ padding: width < 650 ? 22 : 28, gap: 16 }}>
               <View
@@ -1822,6 +1867,45 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           )}
           {!surface && tab === "Settings" && isManager && (
             <View style={{ gap: 22 }}>
+              <View testID="circle-cover-settings">
+                <Card
+                  style={{
+                    padding: width < 650 ? 20 : 28,
+                    maxWidth: 750,
+                    width: "100%",
+                    alignSelf: "center",
+                    gap: 14,
+                  }}
+                >
+                  <SectionTitle title="Cover photo" />
+                  <T
+                    style={{
+                      color: palette.muted,
+                      fontSize: 12,
+                      lineHeight: 20,
+                    }}
+                  >
+                    This is the header photo at the top of your Circle. You can
+                    also tap that photo to change it.
+                  </T>
+                  {!!circle.cover && (
+                    <Image
+                      source={{ uri: circle.cover }}
+                      style={{ height: 120, width: "100%", borderRadius: 12 }}
+                      resizeMode="cover"
+                      accessibilityLabel="Current Circle cover photo"
+                    />
+                  )}
+                  <View style={{ alignItems: "flex-start" }}>
+                    <Button
+                      icon={Camera}
+                      onPress={() => setCoverEditorOpen(true)}
+                    >
+                      {circle.cover ? "Change cover photo" : "Add cover photo"}
+                    </Button>
+                  </View>
+                </Card>
+              </View>
               <ThemeEditor circleId={id} />
               <Card
                 style={{
@@ -1976,6 +2060,15 @@ const s = StyleSheet.create({
     borderColor: "#FFFFFF20",
     right: -50,
     bottom: -140,
+  },
+  coverEditLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
   },
   aboutRow: {
     flexDirection: "row",
