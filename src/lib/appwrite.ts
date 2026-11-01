@@ -6,6 +6,7 @@ import {
   configurePlatform,
 } from "./appwriteSdk";
 import { runCircleExecution } from "./appwriteExecution";
+import { readSessionAccount } from "./session";
 
 const endpoint = process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT;
 const project = process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID;
@@ -37,12 +38,7 @@ export { ID };
 export async function currentAccount() {
   const problem = configurationError();
   if (problem) throw new Error(problem);
-  try {
-    return await account.get();
-  } catch (error) {
-    if ((error as { code?: number }).code === 401) return null;
-    throw error;
-  }
+  return readSessionAccount(account);
 }
 export async function invokeCircle<T>(body: unknown): Promise<T> {
   const problem = configurationError();

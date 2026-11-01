@@ -13,6 +13,15 @@ import type { CircleActions, CircleContextValue } from "./types";
 import { emptyCircle } from "./empty";
 import { prepareMedia } from "../lib/appwriteMedia";
 import {
+  createSessionRefresher,
+  loadSessionSnapshot,
+  readSessionAccount,
+  sessionHttpStatus,
+  signInWithSession,
+  type AuthStatus,
+  type SessionRefreshResult,
+} from "../lib/session";
+import {
   getPostMediaInput,
   preparePostAttachments,
   requireAlbumSupport,
@@ -21,37 +30,42 @@ import {
 
 /** Appwrite Auth + server-authorized snapshots. No remote state is persisted locally. */
 export function useRemoteCircle(): CircleContextValue {
-  const [state, setState] = useState<AppState>(emptyCircle);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const generation = useRef(0),
-    mounted = useRef(true);
-  const signingOut = useRef(false);
-  const refresh = useCallback(async () => {
-    if (signingOut.current) return;
-    const token = ++generation.current;
-    try {
-      const user = await currentAccount();
-      const next = user
-        ? await invokeCircle<AppState>({ kind: "snapshot" })
-        : emptyCircle();
-      if (mounted.current && generation.current === token) {
-        setState((previous) => ({ ...next, theme: previous.theme }));
-        setError(null);
-      }
-    } catch (cause) {
-      if (mounted.current && generation.current === token) {
-        setState(emptyCircle());
-        setError(
-          cause instanceof Error ? cause.message : "Circle could not connect.",
-        );
-      }
-    } finally {
-      if (mounted.current && generation.current === token) setReady(true);
-    }
-  }, []);
+  const [connection, setConnection] = useState<
+    SessionRefreshResult & { ready: boolean }
+  >({ status: "unknown", state: emptyCircle(), error: null, ready: false });
+  const { state, ready, error, status: authStatus } = connection;
+  const latestStatus = useRef<AuthStatus>("unknown");
+  const authBusy = useRef(false);
+  const controller = useRef<ReturnType<typeof createSessionRefresher> | null>(
+    null,
+  );
+  if (!controller.current)
+    controller.current = createSessionRefresher(
+      async () => {
+        const problem = configurationError();
+        if (problem)
+          return { status: "unknown", state: emptyCircle(), error: problem };
+        return loadSessionSnapshot({
+          currentAccount,
+          snapshot: () => invokeCircle<AppState>({ kind: "snapshot" }),
+        });
+      },
+      (result) => {
+        latestStatus.current = result.status;
+        setConnection((previous) => ({
+          ...result,
+          state: { ...result.state, theme: previous.state.theme },
+          ready: true,
+        }));
+      },
+    );
+  const refresh = useCallback(() => controller.current!.refresh(), []);
+  const refreshFresh = useCallback(() => {
+    controller.current!.invalidate();
+    return refresh();
+  }, [refresh]);
   useEffect(() => {
-    mounted.current = true;
+    controller.current!.setActive(true);
     void refresh();
     const timer = setInterval(() => {
       if (
@@ -62,39 +76,84 @@ export function useRemoteCircle(): CircleContextValue {
         void refresh();
     }, 10_000);
     const foreground = NativeAppState.addEventListener("change", (value) => {
-      if (value === "active") void refresh();
+      if (value === "active") void refreshFresh();
     });
     const visible = () => {
-      if (document.visibilityState === "visible") void refresh();
+      if (document.visibilityState === "visible") void refreshFresh();
     };
     if (typeof document !== "undefined")
       document.addEventListener("visibilitychange", visible);
     return () => {
-      mounted.current = false;
-      // Invalidate asynchronous requests; this ref is a counter, not a DOM node.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      ++generation.current;
+      controller.current!.setActive(false);
       clearInterval(timer);
       foreground.remove();
       if (typeof document !== "undefined")
         document.removeEventListener("visibilitychange", visible);
     };
-  }, [refresh]);
+  }, [refresh, refreshFresh]);
   const run = useCallback(
     async (work: () => Promise<Result>): Promise<Result> => {
+      if (authBusy.current)
+        return { ok: false, error: "Please wait for sign-in to finish." };
+      if (latestStatus.current !== "authenticated")
+        return {
+          ok: false,
+          error: "Reconnect to Circle before making changes.",
+        };
       try {
         const problem = configurationError();
         if (problem) throw new Error(problem);
         const result = await work();
+        controller.current!.invalidate();
         await refresh();
         return result;
       } catch (cause) {
+        controller.current!.invalidate();
         await refresh();
         return {
           ok: false,
           error:
             cause instanceof Error ? cause.message : "The operation failed.",
         };
+      }
+    },
+    [refresh],
+  );
+  const authenticate = useCallback(
+    async (work: () => Promise<Result>): Promise<Result> => {
+      if (authBusy.current)
+        return {
+          ok: false,
+          error: "Please wait for the current sign-in operation.",
+        };
+      authBusy.current = true;
+      controller.current!.setPaused(true);
+      let result: Result;
+      try {
+        const problem = configurationError();
+        if (problem) throw new Error(problem);
+        result = await work();
+      } catch (cause) {
+        result = {
+          ok: false,
+          error:
+            cause instanceof Error
+              ? cause.message
+              : "Sign-in could not finish.",
+          ...(typeof (cause as { code?: unknown } | null)?.code === "string"
+            ? { code: (cause as { code: string }).code }
+            : {}),
+        };
+      } finally {
+        controller.current!.setPaused(false);
+      }
+      try {
+        await refresh();
+        return result;
+      } finally {
+        // Keep competing auth/write actions blocked until identity/data refresh
+        // completes, not merely until the session POST/DELETE finishes.
+        authBusy.current = false;
       }
     },
     [refresh],
@@ -107,16 +166,12 @@ export function useRemoteCircle(): CircleContextValue {
   const actions = useMemo<CircleActions>(
     () => ({
       signIn: (email, _name, password) =>
-        run(async () => {
-          if (!password) throw new Error("Enter your password.");
-          await account.createEmailPasswordSession({
-            email: email.trim(),
-            password,
-          });
+        authenticate(async () => {
+          await signInWithSession(account, email, password);
           return { ok: true };
         }),
       signUp: (name, username, email, adult, password) =>
-        run(async () => {
+        authenticate(async () => {
           if (!adult)
             throw new Error("Circle accounts are for adults 18 and older.");
           if (!password || password.length < 8)
@@ -127,16 +182,17 @@ export function useRemoteCircle(): CircleContextValue {
             );
           if (name.trim().length < 2 || name.trim().length > 80)
             throw new Error("Enter a name between 2 and 80 characters.");
+          if (await readSessionAccount(account))
+            throw new Error(
+              "An account is already signed in. Sign out before creating another account.",
+            );
           await account.create({
             userId: ID.unique(),
             email: email.trim(),
             password,
             name: name.trim(),
           });
-          await account.createEmailPasswordSession({
-            email: email.trim(),
-            password,
-          });
+          await signInWithSession(account, email, password);
           // Profile setup is retryable through profile settings if this call fails.
           return invokeCircle<Result>({
             kind: "action",
@@ -144,15 +200,18 @@ export function useRemoteCircle(): CircleContextValue {
           });
         }),
       signOut: () =>
-        run(async () => {
-          signingOut.current = true;
-          ++generation.current;
-          setState(emptyCircle());
+        authenticate(async () => {
+          latestStatus.current = "unknown";
+          setConnection({
+            status: "unknown",
+            state: emptyCircle(),
+            error: null,
+            ready: true,
+          });
           try {
             await account.deleteSession({ sessionId: "current" });
-          } finally {
-            signingOut.current = false;
-            ++generation.current;
+          } catch (cause) {
+            if (sessionHttpStatus(cause) !== 401) throw cause;
           }
           return { ok: true };
         }),
@@ -284,11 +343,14 @@ export function useRemoteCircle(): CircleContextValue {
         dispatch({ type: "report", targetType, targetId, reason }),
       blockUser: (userId) => dispatch({ type: "blockUser", userId }),
       setTheme: (theme) => {
-        setState((previous) => ({ ...previous, theme }));
+        setConnection((previous) => ({
+          ...previous,
+          state: { ...previous.state, theme },
+        }));
         return { ok: true };
       },
     }),
-    [dispatch, run],
+    [dispatch, run, authenticate],
   );
   const joined = new Set(
     state.members
@@ -299,6 +361,8 @@ export function useRemoteCircle(): CircleContextValue {
     state,
     ready,
     error,
+    authStatus,
+    retryConnection: refreshFresh,
     actions,
     mode: "appwrite",
     user: state.users.find((u) => u.id === state.currentUserId) || null,

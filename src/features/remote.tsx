@@ -30,7 +30,10 @@ export function useRemoteFeatures(): FeatureContextValue {
     mounted = useRef(true),
     loadedFor = useRef<string | null>(null);
   const refresh = useCallback(async () => {
-    const actor = current.current.user?.id,
+    const actor =
+        current.current.authStatus === "unknown"
+          ? undefined
+          : current.current.user?.id,
       token = ++generation.current;
     if (!actor) {
       setRaw(emptyFeatures());
@@ -43,6 +46,7 @@ export function useRemoteFeatures(): FeatureContextValue {
       if (
         mounted.current &&
         generation.current === token &&
+        current.current.authStatus !== "unknown" &&
         current.current.user?.id === actor
       ) {
         loadedFor.current = actor;
@@ -90,17 +94,23 @@ export function useRemoteFeatures(): FeatureContextValue {
       clearInterval(timer);
       foreground.remove();
     };
-  }, [userId, membershipKey, refresh]);
+  }, [userId, membershipKey, base.authStatus, refresh]);
   const dispatch = useCallback(
     async (action: FeatureAction): Promise<Result> => {
       const actor = current.current.user?.id;
+      if (current.current.authStatus === "unknown")
+        return {
+          ok: false,
+          error: "Reconnect to Circle before making changes.",
+        };
       if (!actor) return { ok: false, error: "Sign in to continue." };
       try {
         const result = await invokeCircle<Result>({
           kind: "featureAction",
           action,
         });
-        if (current.current.user?.id !== actor)
+        const latest = current.current;
+        if (latest.authStatus === "unknown" || latest.user?.id !== actor)
           return { ok: false, error: "Your session changed." };
         await refresh();
         return result;
@@ -132,7 +142,11 @@ export function useRemoteFeatures(): FeatureContextValue {
         dispatch({ type: "saveTheme", circleId, theme }),
       generateTheme: async (circleId, prompt): Promise<ThemeResult> => {
         const actor = current.current.user?.id;
-        if (!actor || !canManageFeatures(current.current.state, circleId))
+        if (
+          current.current.authStatus === "unknown" ||
+          !actor ||
+          !canManageFeatures(current.current.state, circleId)
+        )
           return {
             ok: false,
             error: "Only the owner or an admin can preview a Circle theme.",
@@ -148,9 +162,11 @@ export function useRemoteFeatures(): FeatureContextValue {
             circleId,
             prompt,
           });
+          const latest = current.current;
           if (
-            actor !== current.current.user?.id ||
-            !canManageFeatures(current.current.state, circleId)
+            latest.authStatus === "unknown" ||
+            actor !== latest.user?.id ||
+            !canManageFeatures(latest.state, circleId)
           )
             throw new Error("Your Circle access changed. Please try again.");
           if (!validateGeneratedWallpaper(theme, circleId))
@@ -179,7 +195,7 @@ export function useRemoteFeatures(): FeatureContextValue {
     [dispatch],
   );
   const safe =
-    loadedFor.current === userId
+    base.authStatus !== "unknown" && loadedFor.current === userId
       ? visibleFeatures(raw, base.state)
       : emptyFeatures();
   return { ...safe, ready: ready && base.ready, error, actions };

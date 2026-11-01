@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Check, LockKeyhole } from "lucide-react-native";
 import { useCircle } from "../src/state/CircleProvider";
 import { T, Field, Button, Banner, IconButton } from "../src/ui/primitives";
 import { colors as c, font } from "../src/ui/theme";
+import { currentAccount } from "../src/lib/appwrite";
 import {
   invitationAuthReturn,
   invitationAuthContext,
@@ -30,7 +31,9 @@ export default function Auth() {
   const [adult, setAdult] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const { actions, mode } = useCircle();
+  const { actions, mode, user, authStatus, retryConnection } = useCircle();
+  const latestUserId = useRef(user?.id);
+  latestUserId.current = user?.id;
   const sequence = useRef(0);
   const returnScope = JSON.stringify([params.next, params["#"]]);
   const currentScope = useRef(returnScope);
@@ -77,6 +80,58 @@ export default function Auth() {
       else setMessage(result.error || "Please try again.");
     } catch {
       if (current()) setMessage("We could not connect. Please try again.");
+    } finally {
+      if (current()) setBusy(false);
+    }
+  };
+  const switchAccount = async () => {
+    if (busy) return;
+    const attempt = ++sequence.current;
+    const submittedScope = currentScope.current;
+    const current = () =>
+      attempt === sequence.current && submittedScope === currentScope.current;
+    setBusy(true);
+    setMessage("");
+    setPassword("");
+    try {
+      const result = await actions.signOut();
+      if (current() && !result.ok)
+        setMessage(result.error || "We couldn’t sign out. Please try again.");
+    } catch {
+      if (current()) setMessage("We couldn’t sign out. Please try again.");
+    } finally {
+      if (current()) setBusy(false);
+    }
+  };
+  const continueCurrentAccount = async () => {
+    if (busy || !user || authStatus !== "authenticated") return;
+    const expectedId = user.id;
+    const attempt = ++sequence.current;
+    const submittedScope = currentScope.current;
+    const current = () =>
+      attempt === sequence.current && submittedScope === currentScope.current;
+    setBusy(true);
+    setMessage("");
+    try {
+      const verified = await currentAccount();
+      if (!current()) return;
+      if (
+        !verified ||
+        verified.$id !== expectedId ||
+        latestUserId.current !== expectedId
+      ) {
+        await retryConnection?.();
+        if (current())
+          setMessage(
+            "Your sign-in changed. Review the account shown before continuing.",
+          );
+        return;
+      }
+      router.replace(invitationAuthReturn(inviteContext?.next, params["#"]));
+    } catch {
+      await retryConnection?.();
+      if (current())
+        setMessage("We couldn’t check your account. Please try again.");
     } finally {
       if (current()) setBusy(false);
     }
@@ -145,6 +200,38 @@ export default function Auth() {
         )}
         {joining && (
           <Banner text="After signing in, you can review and use your Circle invitation." />
+        )}
+        {mode === "appwrite" && authStatus === "authenticated" && user && (
+          <View
+            style={{
+              backgroundColor: c.white,
+              borderWidth: 1,
+              borderColor: c.line,
+              borderRadius: 16,
+              padding: 18,
+              gap: 12,
+              marginBottom: 18,
+            }}
+          >
+            <T style={{ fontFamily: font.bold }}>You’re already signed in</T>
+            <T style={{ color: c.muted, lineHeight: 21 }}>
+              {user.name}
+              {user.email ? ` · ${user.email}` : ""}
+            </T>
+            <Button
+              disabled={busy}
+              onPress={() => void continueCurrentAccount()}
+            >
+              Continue with current account
+            </Button>
+            <Button
+              secondary
+              disabled={busy}
+              onPress={() => void switchAccount()}
+            >
+              Use a different account
+            </Button>
+          </View>
         )}
         {!!message && (
           <Banner text={message} onDismiss={() => setMessage("")} />

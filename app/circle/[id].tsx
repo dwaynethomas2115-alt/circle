@@ -155,6 +155,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const [oldestFirst, setOldestFirst] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [coverEditorOpen, setCoverEditorOpen] = useState(false);
+  const [coverAspectRatio, setCoverAspectRatio] = useState(3);
   const [busy, setBusy] = useState(false);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
@@ -328,6 +329,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
         visible={coverEditorOpen}
         onClose={() => setCoverEditorOpen(false)}
         circleId={id}
+        targetAspectRatio={coverAspectRatio}
         onSaved={() => setNotice("Your Circle cover photo has been updated.")}
       />
       <InviteSheet
@@ -461,6 +463,13 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
         ) : (
           <>
             <View
+              onLayout={({ nativeEvent: { layout } }) => {
+                if (layout.width <= 0 || layout.height <= 0) return;
+                const ratio = layout.width / layout.height;
+                setCoverAspectRatio((previous) =>
+                  Math.abs(previous - ratio) < 0.001 ? previous : ratio,
+                );
+              }}
               style={{
                 height: width < 650 ? 140 : 220,
                 backgroundColor: circle.color,

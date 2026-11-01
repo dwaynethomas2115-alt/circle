@@ -15,11 +15,16 @@ import { useCircle } from "../state/CircleProvider";
 import { useCircleTheme, themeTint } from "../features/theme-context";
 import { Banner, Button, T } from "./primitives";
 import { colors, font } from "./theme";
+import { CoverCropper } from "./CoverCropper";
+import { DEFAULT_COVER_TRANSFORM, type CoverTransform } from "../lib/coverCrop";
+import { cropCover } from "../lib/cropCover";
 
 interface DraftCover {
   scope: string;
   uri: string;
   selection: number;
+  width: number;
+  height: number;
 }
 interface CoverOperation {
   scope: string;
@@ -32,11 +37,13 @@ export function CircleCoverEditor({
   onClose,
   circleId,
   onSaved,
+  targetAspectRatio = 3,
 }: {
   visible: boolean;
   onClose: () => void;
   circleId: string;
   onSaved?: () => void;
+  targetAspectRatio?: number;
 }) {
   const { state, user, actions } = useCircle();
   const theme = useCircleTheme();
@@ -57,6 +64,13 @@ export function CircleCoverEditor({
   const [busy, setBusy] = useState<"pick" | "save" | null>(null);
   const [error, setError] = useState("");
   const [loadedUri, setLoadedUri] = useState<string>();
+  const [transform, setTransform] = useState<CoverTransform>({
+    ...DEFAULT_COVER_TRANSFORM,
+  });
+  const aspect =
+    Number.isFinite(targetAspectRatio) && targetAspectRatio > 0
+      ? targetAspectRatio
+      : 3;
   const selected = canEdit && draft?.scope === scope ? draft : null;
   const previewUri = selected?.uri || circle?.cover;
   const previewKey = selected
@@ -71,6 +85,7 @@ export function CircleCoverEditor({
     setBusy(null);
     setError("");
     setLoadedUri(undefined);
+    setTransform({ ...DEFAULT_COVER_TRANSFORM });
     return () => {
       operation.current = null;
     };
@@ -118,9 +133,8 @@ export function CircleCoverEditor({
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [3, 1],
-        quality: 0.85,
+        allowsEditing: false,
+        quality: 1,
         exif: false,
       });
       if (!current(pending) || result.canceled) return;
@@ -129,7 +143,38 @@ export function CircleCoverEditor({
         setError("Choose a photo for your Circle header.");
         return;
       }
-      setDraft({ scope: pending.scope, uri: asset.uri, selection: pending.id });
+      let imageWidth = asset.width,
+        imageHeight = asset.height;
+      if (!imageWidth || !imageHeight) {
+        const size = await new Promise<{ width: number; height: number }>(
+          (resolve, reject) =>
+            Image.getSize(
+              asset.uri,
+              (width, height) => resolve({ width, height }),
+              reject,
+            ),
+        );
+        imageWidth = size.width;
+        imageHeight = size.height;
+      }
+      if (!current(pending)) return;
+      if (
+        !Number.isFinite(imageWidth) ||
+        !Number.isFinite(imageHeight) ||
+        imageWidth < 1 ||
+        imageHeight < 1
+      ) {
+        setError("This photo's size could not be read. Choose another photo.");
+        return;
+      }
+      setDraft({
+        scope: pending.scope,
+        uri: asset.uri,
+        selection: pending.id,
+        width: Math.floor(imageWidth),
+        height: Math.floor(imageHeight),
+      });
+      setTransform({ ...DEFAULT_COVER_TRANSFORM });
       setLoadedUri(undefined);
     } catch {
       if (current(pending))
@@ -142,10 +187,19 @@ export function CircleCoverEditor({
     if (!selected || loadedUri !== selected.uri) return;
     const pending = begin("save");
     if (!pending) return;
+    let submitted = false;
     try {
+      const croppedUri = await cropCover(
+        selected.uri,
+        selected,
+        aspect,
+        transform,
+      );
+      if (!current(pending)) return;
       // Cover-only patch leaves Circle name, description, and access settings intact.
+      submitted = true;
       const result = await actions.updateCircle(circleId, {
-        cover: selected.uri,
+        cover: croppedUri,
       });
       if (!current(pending)) return;
       if (!result.ok) {
@@ -160,7 +214,9 @@ export function CircleCoverEditor({
     } catch {
       if (current(pending))
         setError(
-          "We couldn’t confirm the cover change. Reopen your Circle to check before trying again.",
+          submitted
+            ? "We couldn’t confirm the cover change. Reopen your Circle to check before trying again."
+            : "This photo could not be cropped. Choose it again or try a different photo.",
         );
     } finally {
       finish(pending);
@@ -215,51 +271,85 @@ export function CircleCoverEditor({
             contentContainerStyle={{ gap: 18, paddingBottom: 2 }}
           >
             {!!error && <Banner text={error} onDismiss={() => setError("")} />}
-            <View
-              style={[
-                s.preview,
-                { backgroundColor: themeTint(theme.accent, 0.1) },
-              ]}
-            >
-              {previewUri ? (
-                <Image
-                  key={previewKey}
-                  testID="circle-cover-preview"
-                  accessibilityLabel="Circle cover photo preview"
-                  source={{ uri: previewUri }}
-                  resizeMode="cover"
-                  style={StyleSheet.absoluteFill}
-                  onLoad={() => {
-                    if (
-                      activeScope.current === scope &&
-                      previewRef.current === previewKey
-                    )
-                      setLoadedUri(previewUri);
-                  }}
-                  onError={() => {
-                    if (
-                      activeScope.current !== scope ||
-                      previewRef.current !== previewKey
-                    )
-                      return;
-                    setLoadedUri(undefined);
-                    setError(
-                      "This photo couldn’t be previewed. Choose another photo.",
-                    );
-                  }}
-                />
-              ) : (
-                <View style={s.placeholder}>
-                  <Camera size={30} color={theme.accent} />
-                  <T style={{ fontFamily: font.bold, color: theme.accent }}>
-                    Add your Circle’s cover photo
-                  </T>
-                </View>
-              )}
-            </View>
+            {selected ? (
+              <CoverCropper
+                key={previewKey}
+                uri={selected.uri}
+                image={selected}
+                aspect={aspect}
+                transform={transform}
+                disabled={!!busy}
+                onChange={setTransform}
+                onLoad={() => {
+                  if (
+                    activeScope.current === scope &&
+                    previewRef.current === previewKey
+                  )
+                    setLoadedUri(selected.uri);
+                }}
+                onError={() => {
+                  if (
+                    activeScope.current !== scope ||
+                    previewRef.current !== previewKey
+                  )
+                    return;
+                  setLoadedUri(undefined);
+                  setError(
+                    "This photo couldn’t be previewed. Choose another photo.",
+                  );
+                }}
+              />
+            ) : (
+              <View
+                style={[
+                  s.preview,
+                  {
+                    backgroundColor: themeTint(theme.accent, 0.1),
+                    aspectRatio: aspect,
+                  },
+                ]}
+              >
+                {previewUri ? (
+                  <Image
+                    key={previewKey}
+                    testID="circle-cover-preview"
+                    accessibilityLabel="Circle cover photo preview"
+                    source={{ uri: previewUri }}
+                    resizeMode="cover"
+                    style={StyleSheet.absoluteFill}
+                    onLoad={() => {
+                      if (
+                        activeScope.current === scope &&
+                        previewRef.current === previewKey
+                      )
+                        setLoadedUri(previewUri);
+                    }}
+                    onError={() => {
+                      if (
+                        activeScope.current !== scope ||
+                        previewRef.current !== previewKey
+                      )
+                        return;
+                      setLoadedUri(undefined);
+                      setError(
+                        "This photo couldn’t be previewed. Choose another photo.",
+                      );
+                    }}
+                  />
+                ) : (
+                  <View style={s.placeholder}>
+                    <Camera size={30} color={theme.accent} />
+                    <T style={{ fontFamily: font.bold, color: theme.accent }}>
+                      Add your Circle’s cover photo
+                    </T>
+                  </View>
+                )}
+              </View>
+            )}
             <T style={s.description}>
-              Wide photos work best. The header crops to fit each screen. Your
-              current cover stays in place until you save.
+              Choose a photo, then move and zoom it inside the frame. Only that
+              part of the photo is saved. Your current cover stays in place
+              until you save.
             </T>
             <View style={{ alignItems: "flex-start" }}>
               <Button
@@ -314,7 +404,6 @@ const s = StyleSheet.create({
   },
   preview: {
     width: "100%",
-    aspectRatio: 3,
     borderRadius: 16,
     overflow: "hidden",
   },

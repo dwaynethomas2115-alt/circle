@@ -72,4 +72,6 @@ export interface CircleContextValue {
   actions: CircleActions;
   error?: string | null;
   mode: "demo" | "appwrite";
+  authStatus?: "unknown" | "authenticated" | "signedOut";
+  retryConnection?: () => Promise<void>;
 }
