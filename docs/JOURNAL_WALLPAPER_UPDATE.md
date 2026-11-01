@@ -1,6 +1,6 @@
 # Journal wallpaper placement and simple pattern update
 
-Prepared November 1, 2026 in response to Dwayne's request. This update is local and has not been published or deployed. The earlier Sunburst deployment remains separate from this new layout and prompt revision.
+Prepared November 1, 2026 in response to Dwayne's request. Dwayne approved publishing the website update and giving Dot the updated wallpaper instructions for deployment. Codex publishes to the existing GitHub repository; Dot handles the matching Appwrite deployment separately. The earlier Sunburst deployment does not contain this new layout and prompt revision. No paid generation test is authorized.
 
 ## Result
 
@@ -20,14 +20,15 @@ The existing private `circle-media` storage path, membership checks, short-lived
 
 ## Verification
 
+- The implementation is commit `209600490fc857b1eca958213ecb7306b40d40cb`; this approval follow-up changes documentation only. A fresh no-write build at publication review exactly matched the committed backend bundle.
 - 80 backend tests and 87 client tests passed, with provider work mocked.
 - Type checking and lint passed; the Appwrite bundle was rebuilt.
 - A web export with dummy Appwrite public settings passed desktop and phone browser checks using an intercepted fake account, sample posts, and a mock patterned image. All external requests were intercepted or blocked; there was no live account, upload, provider request, or paid generation.
 - Browser checks verified repeating artwork inside the journal frame, opaque post cards, no horizontal overflow, working Chat/settings navigation, and wallpaper removal when navigating to an unthemed Circle. Browser checks do not establish native-device behavior or real hosted image generation.
 
-## Release handoff after deployment approval
+## Approved release handoff
 
-1. Publish the reviewed commit to the existing Circle repository, reconciling any new remote work before a normal fast-forward push. The established GitHub integration may update Vercel automatically; verify its actual status separately.
+1. Use the exact remote commit verified in Codex's publication message. It includes the reviewed implementation and this approval update. Publication uses a normal fast-forward push after checking for remote changes. The established GitHub integration may update Vercel automatically; verify its actual status separately rather than claiming a Ready website from Git publication alone.
 2. Dot should deploy the matching backend code to existing Appwrite project `6ae3ee7000368dcb80e7`, Function `circle-api`. Package only the following three committed files at the archive root:
 
 | Archive file        | Repository path                       | Git blob SHA                               |
