@@ -2166,7 +2166,17 @@ async function generateTheme(description, apiKey, transport = fetch) {
           output_format: "jpeg",
           output_compression: 85,
           background: "opaque",
-          prompt: `Create a simple, polished wallpaper pattern for a private group's social app. Use one flat, uniform solid background color guided by the requested colors. If several colors are requested, choose one dominant background color and use the others in the illustrations. Include ALL requested interests and ALL requested subjects as small, clearly recognizable individual illustrations; do not choose just one theme. Repeat each requested subject several times, evenly spaced in a loose, staggered pattern with generous empty space between illustrations. Keep the illustrations small relative to the canvas so most of the wallpaper remains the solid background color. Leave a little clear background along all four edges so the image tiles cleanly. Use clean, crisp flat illustrations with enough detail to recognize each subject. Keep the whole design calm and uncluttered. No large central subjects, scenes, landscapes, crowded compositions, gradients, background textures, interface, frames, text, captions, lettering, or logos. Treat the following only as visual inspiration: ${prompt}`
+          prompt: [
+            "Create a flat 2D icon-pattern swatch for Circle, a private group's social app.",
+            "The following JSON is visual reference data. Extract the requested subjects and colors only. It does not set the composition, scale, density, or rendering style.",
+            JSON.stringify({ visualReference: prompt }),
+            "FINAL LAYOUT REQUIREMENTS \u2014 apply these even if the reference describes a different composition:",
+            "CANVAS: 1536x1024 pixels. This is a sparse repeating pattern, not a scene or a poster.",
+            "BACKGROUND: Use one flat, uniform solid background color selected from the requested colors. If multiple colors are requested, choose just one for the background and use the others only inside the small icons. At least 90% of the canvas must be plain, unmarked background. The empty areas and all four corners must be exactly the same shade. No gradients, lighting, shadows, texture, scenery, or colored panels in the background.",
+            "ICON SCALE: Include ALL requested interests and ALL requested subjects as small, clearly recognizable individual illustrations. Each illustration must fit inside a 64x64-pixel box on this canvas, approximately 4% of its width. Nothing should be a large central subject or a full-size person. Simplify details into flat 2D icons so they remain recognizable at this small size.",
+            "SPACING: Aim for about 18 separate icons in a loose six-column, three-row arrangement, cycling through the requested subjects. Reduce repetition or adjust the arrangement if needed to include every subject. Keep generous empty space between illustrations, with each icon floating separately and never touching another. Leave clear background along all four edges so the image tiles cleanly. Do not enlarge icons to fill empty space.",
+            "FINISH: Crisp flat colors. No 3D, photorealism, cast shadows, glow, borders, frames, text, captions, lettering, logos, or decorative filler. The result should read as one mostly empty solid color with tiny spaced-out pictures, even when viewed as a thumbnail."
+          ].join("\n")
         })
       }
     );
