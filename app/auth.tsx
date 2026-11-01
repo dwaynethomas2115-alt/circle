@@ -1,14 +1,28 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Pressable, StyleSheet, ScrollView } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, ArrowRight, Check, LockKeyhole } from "lucide-react-native";
 import { useCircle } from "../src/state/CircleProvider";
 import { T, Field, Button, Banner, IconButton } from "../src/ui/primitives";
 import { colors as c, font } from "../src/ui/theme";
+import {
+  invitationAuthReturn,
+  invitationAuthContext,
+  invitationAuthFragment,
+  invitationJoinRoute,
+} from "../src/lib/inviteLinks";
 
 export default function Auth() {
-  const params = useLocalSearchParams<{ mode?: string }>();
-  const [signup, setSignup] = useState(params.mode === "signup");
+  const params = useLocalSearchParams<{
+    mode?: string;
+    next?: string;
+    "#"?: string;
+  }>();
+  const inviteContext = invitationAuthContext(params["#"]);
+  const joining = !!inviteContext;
+  const inviteCode = inviteContext?.code || "";
+  const requestedMode = inviteContext?.mode || params.mode;
+  const [signup, setSignup] = useState(requestedMode === "signup");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -17,25 +31,54 @@ export default function Auth() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const { actions, mode } = useCircle();
+  const sequence = useRef(0);
+  const returnScope = JSON.stringify([params.next, params["#"]]);
+  const currentScope = useRef(returnScope);
+  currentScope.current = returnScope;
+  useEffect(() => {
+    setSignup(requestedMode === "signup");
+  }, [requestedMode]);
+  useEffect(() => {
+    ++sequence.current;
+    setBusy(false);
+  }, [returnScope]);
+  useEffect(
+    () => () => {
+      ++sequence.current;
+    },
+    [],
+  );
   const submit = async () => {
+    if (busy) return;
+    const attempt = ++sequence.current;
+    const submittedScope = currentScope.current;
+    const current = () =>
+      attempt === sequence.current && submittedScope === currentScope.current;
     setBusy(true);
     setMessage("");
     try {
       const result = signup
         ? await actions.signUp(name, username, email, adult, password)
         : await actions.signIn(email, undefined, password);
+      if (!current()) return;
       if (result.ok && result.code === "confirm_email") {
         setMessage(
           "Check your email to confirm your account, then come back to sign in.",
         );
         setSignup(false);
+        router.setParams(
+          joining
+            ? { "#": invitationAuthFragment("signin", inviteCode) }
+            : { mode: "signin" },
+        );
         setPassword("");
-      } else if (result.ok) router.replace("/");
+      } else if (result.ok)
+        router.replace(invitationAuthReturn(inviteContext?.next, params["#"]));
       else setMessage(result.error || "Please try again.");
     } catch {
-      setMessage("We could not connect. Please try again.");
+      if (current()) setMessage("We could not connect. Please try again.");
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   };
   return (
@@ -51,8 +94,12 @@ export default function Auth() {
       <View style={styles.box}>
         <IconButton
           icon={ArrowLeft}
-          label="Back to welcome"
-          onPress={() => router.replace("/welcome")}
+          label={joining ? "Back to invitation" : "Back to welcome"}
+          onPress={() =>
+            router.replace(
+              joining ? invitationJoinRoute(inviteCode) : "/welcome",
+            )
+          }
           style={{ marginLeft: -8, marginBottom: 25 }}
         />
         <View
@@ -96,6 +143,9 @@ export default function Auth() {
             }
           />
         )}
+        {joining && (
+          <Banner text="After signing in, you can review and use your Circle invitation." />
+        )}
         {!!message && (
           <Banner text={message} onDismiss={() => setMessage("")} />
         )}
@@ -103,6 +153,7 @@ export default function Auth() {
           <>
             <Field
               label="Your name"
+              editable={!busy}
               value={name}
               onChangeText={setName}
               placeholder="Alex Morgan"
@@ -111,6 +162,7 @@ export default function Auth() {
             />
             <Field
               label="Username"
+              editable={!busy}
               value={username}
               onChangeText={setUsername}
               placeholder="alexmorgan"
@@ -122,6 +174,7 @@ export default function Auth() {
         )}
         <Field
           label="Email address"
+          editable={!busy}
           value={email}
           onChangeText={setEmail}
           placeholder="you@example.com"
@@ -133,6 +186,7 @@ export default function Auth() {
         {mode === "appwrite" && (
           <Field
             label="Password"
+            editable={!busy}
             value={password}
             onChangeText={setPassword}
             placeholder="At least 8 characters"
@@ -144,6 +198,7 @@ export default function Auth() {
           <Pressable
             accessibilityRole="checkbox"
             accessibilityState={{ checked: adult }}
+            disabled={busy}
             onPress={() => setAdult(!adult)}
             style={{
               flexDirection: "row",
@@ -196,8 +251,15 @@ export default function Auth() {
           </T>
           <Pressable
             accessibilityRole="button"
+            disabled={busy}
             onPress={() => {
               setSignup(!signup);
+              const nextMode = signup ? "signin" : "signup";
+              router.setParams(
+                joining
+                  ? { "#": invitationAuthFragment(nextMode, inviteCode) }
+                  : { mode: nextMode },
+              );
               setMessage("");
             }}
           >

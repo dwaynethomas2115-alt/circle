@@ -140,6 +140,12 @@ test("AI wallpaper requests a simple spaced pattern of every interest and sends 
   assert.match(request.prompt, /at least 90% of the canvas/i);
   assert.match(request.prompt, /64x64-pixel box/i);
   assert.match(request.prompt, /1536x1024 pixels/i);
+  assert.match(request.prompt, /central 68% of the canvas completely plain/i);
+  assert.match(request.prompt, /outer left 16% and outer right 16%/i);
+  assert.match(request.prompt, /deliberately irregular positions/i);
+  assert.match(request.prompt, /tilt individual icons gently/i);
+  assert.match(request.prompt, /do not arrange them in a grid/i);
+  assert.doesNotMatch(request.prompt, /six-column|three-row/i);
   assert.match(
     request.prompt,
     /all four corners must be exactly the same shade/i,

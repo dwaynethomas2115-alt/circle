@@ -8,6 +8,7 @@ import {
   LogOut,
   ShieldCheck,
   Trash2,
+  UserPlus,
   X,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
@@ -25,6 +26,7 @@ import {
   Loading,
 } from "../src/ui/primitives";
 import { colors as c, font } from "../src/ui/theme";
+import { InviteSheet } from "../src/ui/InviteSheet";
 
 export default function Profile() {
   const { user, joinedCircles, actions, state, mode, ready } = useCircle();
@@ -36,6 +38,7 @@ export default function Profile() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   if (!ready) return <Loading />;
   if (!user)
     return (
@@ -126,19 +129,31 @@ export default function Profile() {
         paddingBottom: 30,
       }}
     >
-      <View>
-        <T
-          style={{
-            fontFamily: font.heading,
-            fontSize: 27,
-            letterSpacing: -0.8,
-          }}
-        >
-          Your little corner
-        </T>
-        <T style={{ color: c.muted, marginTop: 7 }}>
-          A familiar face. A few favorite people. All you.
-        </T>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <T
+            style={{
+              fontFamily: font.heading,
+              fontSize: 27,
+              letterSpacing: -0.8,
+            }}
+          >
+            Your little corner
+          </T>
+          <T style={{ color: c.muted, marginTop: 7 }}>
+            A familiar face. A few favorite people. All you.
+          </T>
+        </View>
+        <Button secondary icon={UserPlus} onPress={() => setInviteOpen(true)}>
+          Invite people
+        </Button>
       </View>
       {!!notice && <Banner text={notice} onDismiss={() => setNotice("")} />}
       <Card>
@@ -409,6 +424,7 @@ export default function Profile() {
           <T style={{ fontSize: 13, color: c.red }}>Delete account</T>
         </Pressable>
       </Card>
+      <InviteSheet visible={inviteOpen} onClose={() => setInviteOpen(false)} />
       <Modal
         visible={confirm}
         transparent

@@ -24,7 +24,6 @@ import {
   X,
   Shield,
   LogOut,
-  KeyRound,
   Flag,
   Video,
   CalendarDays,
@@ -47,6 +46,7 @@ import {
   CircleAvatar,
 } from "../../src/ui/primitives";
 import { PostCard } from "../../src/ui/PostCard";
+import { InviteSheet } from "../../src/ui/InviteSheet";
 import { colors as c, font } from "../../src/ui/theme";
 import type { Result } from "../../src/types";
 import { PollsPanel } from "../../src/features/PollsPanel";
@@ -151,7 +151,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const [message, setMessage] = useState("");
   const [memoryMonth, setMemoryMonth] = useState("all");
   const [oldestFirst, setOldestFirst] = useState(false);
-  const [invite, setInvite] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
@@ -265,12 +265,8 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
       setBusy(false);
     }
   }
-  async function invitePeople() {
-    const result = await handle(
-      actions.createInvitation(id),
-      "Your invitation is ready. Share this code privately.",
-    );
-    if (result.ok) setInvite(result.code || "");
+  function invitePeople() {
+    setInviteOpen(true);
   }
   async function joinCircle() {
     if (!circle) return;
@@ -317,6 +313,11 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
     );
   return (
     <View style={{ gap: compactConversation ? 14 : 26 }}>
+      <InviteSheet
+        visible={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        circleId={id}
+      />
       {!compactConversation && (
         <View
           style={[
@@ -389,6 +390,14 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
             {width < 650 ? (
               <>
                 <IconButton
+                  icon={UserPlus}
+                  label="Invite people"
+                  onPress={invitePeople}
+                  color={palette.teal}
+                  size={18}
+                  style={{ width: 34, height: 38 }}
+                />
+                <IconButton
                   icon={Video}
                   label="Join room"
                   onPress={() => setSurface("room")}
@@ -412,6 +421,9 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               </>
             ) : (
               <>
+                <Button secondary icon={UserPlus} onPress={invitePeople}>
+                  Invite people
+                </Button>
                 <Button
                   secondary
                   icon={Video}
@@ -531,6 +543,9 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                       maxWidth: "100%",
                     }}
                   >
+                    <Button secondary icon={UserPlus} onPress={invitePeople}>
+                      Invite people
+                    </Button>
                     <Button
                       secondary
                       icon={MessageCircle}
@@ -694,36 +709,6 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
         )}
       </Card>
       {notice ? <Banner text={notice} onDismiss={() => setNotice("")} /> : null}
-      {invite && membership && (
-        <Card
-          style={{
-            padding: 24,
-            gap: 12,
-            borderColor: "#C4DFCF",
-            backgroundColor: "#F1F7F1",
-          }}
-        >
-          <View style={{ flexDirection: "row", gap: 9, alignItems: "center" }}>
-            <KeyRound size={18} color={palette.teal} />
-            <T style={{ fontFamily: font.bold }}>A seat in your Circle</T>
-          </View>
-          <T
-            selectable
-            style={{
-              fontSize: 23,
-              fontFamily: font.heading,
-              letterSpacing: 2,
-              color: palette.teal,
-            }}
-          >
-            {invite}
-          </T>
-          <T style={{ color: palette.muted, fontSize: 12 }}>
-            Share this invitation privately. It expires in 7 days and can be
-            used once.
-          </T>
-        </Card>
-      )}
       {!membership ? (
         <Empty
           title="The good stuff stays inside."
@@ -1387,7 +1372,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               <Card style={{ padding: 24, gap: 20 }}>
                 <SectionTitle
                   title={`The people who make it yours (${members.length})`}
-                  action={isManager ? "Invite someone" : undefined}
+                  action="Invite someone"
                   onPress={invitePeople}
                 />
                 {members.map((member) => {
@@ -1907,7 +1892,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   Save Circle settings
                 </Button>
                 <Button secondary icon={UserPlus} onPress={invitePeople}>
-                  Create a private invitation
+                  Invite people
                 </Button>
               </Card>
             </View>

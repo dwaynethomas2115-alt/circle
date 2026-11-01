@@ -122,7 +122,8 @@ function ThemedShell({
   const insets = useSafeAreaInsets();
   const { user, joinedCircles, notifications, mode } = useCircle();
   const [search, setSearch] = useState("");
-  const bare = ["/welcome", "/auth"].includes(path);
+  const bare =
+    ["/welcome", "/auth"].includes(path) || (path === "/join" && !user);
   const section =
     path === "/"
       ? "Your shared journal"
@@ -427,7 +428,7 @@ function ThemedShell({
                       borderRadius: 22,
                       overflow: "hidden",
                       paddingVertical: wide ? 24 : 16,
-                      paddingHorizontal: wide ? 24 : 12,
+                      paddingHorizontal: wide ? 24 : 20,
                     }
                   : undefined
               }

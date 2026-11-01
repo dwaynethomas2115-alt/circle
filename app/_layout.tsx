@@ -42,7 +42,7 @@ function Gate() {
   const { ready, user, error } = useCircle();
   const path = usePathname();
   if (!ready) return <Loading />;
-  if (!user && !["/welcome", "/auth"].includes(path))
+  if (!user && !["/welcome", "/auth", "/join"].includes(path))
     return <Redirect href="/welcome" />;
   return (
     <Shell>

@@ -14,6 +14,7 @@ import {
   Users,
   KeyRound,
   Clock,
+  UserPlus,
 } from "lucide-react-native";
 import { useCircle } from "../src/state/CircleProvider";
 import {
@@ -26,12 +27,14 @@ import {
   Banner,
 } from "../src/ui/primitives";
 import { colors as c, font } from "../src/ui/theme";
+import { InviteSheet } from "../src/ui/InviteSheet";
 export default function CirclesScreen() {
   const { state, user, joinedCircles, actions } = useCircle();
   const { width } = useWindowDimensions();
   const [tab, setTab] = useState<"joined" | "discover" | "pending">("joined");
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
   const ids = new Set(joinedCircles.map((x) => x.id));
   const pending = state.requests.filter(
     (x) => x.userId === user?.id && x.status === "pending",
@@ -70,10 +73,16 @@ export default function CirclesScreen() {
             A family album. A weekend away. An everyday kind of belonging.
           </T>
         </View>
-        <Button icon={Plus} onPress={() => router.push("/new-circle")}>
-          Create a Circle
-        </Button>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 9 }}>
+          <Button secondary icon={UserPlus} onPress={() => setInviteOpen(true)}>
+            Invite people
+          </Button>
+          <Button icon={Plus} onPress={() => router.push("/new-circle")}>
+            Create a Circle
+          </Button>
+        </View>
       </View>
+      <InviteSheet visible={inviteOpen} onClose={() => setInviteOpen(false)} />
       {notice ? <Banner text={notice} onDismiss={() => setNotice("")} /> : null}
       <View
         style={{
