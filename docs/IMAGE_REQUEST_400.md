@@ -1,5 +1,9 @@
 # Wallpaper image-request diagnosis and deployment handoff
 
+## Approval update — November 1, 2026
+
+Dwayne approved Dot's proposal to publish the prepared fix, configure `gpt-image-2.5-sunburst` with variable usage billing, and deploy it without a paid test. Codex's current step is GitHub publication only. Dot coordinates the Appwrite setting and deployment separately. This approval does not authorize paid generation, model fallback, credential changes/reveals, or security, storage, billing, or plan changes. The evidence below remains a record of the diagnosis, not a claim of successful hosted generation.
+
 ## Reported hosted evidence
 
 The following facts were supplied by Dwayne and Dot on October 31, 2026. They are not a fresh Appwrite dashboard inspection from this workspace.
@@ -62,7 +66,7 @@ Dot should first read the non-secret effective image-model and quality settings,
 
 Identify the OpenAI project associated with the existing server key using owner records and dashboard metadata, without revealing or changing that key. Read the current model documentation and project access information for a supported GPT Image model that accepts the JPEG options above. The official replacement recommendations are `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`; neither is automatically selected by Circle. Availability to this particular project and final usage cost remain unverified.
 
-**One proposed replacement for approval:** `gpt-image-2.5-sunburst`, keeping `output_format=jpeg`, `size=1536x1024`, `quality=medium`, `output_compression=85`, and `background=opaque`. The pinned official model documentation explicitly recommends this model and documents these options. This is a compatibility recommendation, not a verified least-cost choice. Do not save it as configuration during this diagnosis.
+**Approved replacement for Dot to configure:** `gpt-image-2.5-sunburst`, keeping `output_format=jpeg`, `size=1536x1024`, `quality=medium`, `output_compression=85`, and `background=opaque`. The pinned official model documentation explicitly recommends this model and documents these options. This is a compatibility recommendation, not a verified least-cost choice. Codex does not change the Appwrite setting during publication.
 
 **Official standard token pricing, verified by Dot and supplied by Dwayne on October 31, 2026:** the [OpenAI `gpt-image-2.5-sunburst` model page](https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst) lists:
 
@@ -78,13 +82,13 @@ The model page explicitly says these token rates match GPT Image 2, but the GPT 
 
 This pricing evidence is Dot's read-only official-page verification relayed by Dwayne, not an independent page fetch from this workspace. The earlier normal proxied pricing-page GET returned HTTP 403; no network-policy change or bypass was used. The recommendation is now supported by official compatibility documentation and the supplied current token rates, with the per-wallpaper cost limitation explicit. It does not establish this OpenAI project's model access, actual generation cost, or successful hosted generation.
 
-Dwayne must still separately approve the proposed `gpt-image-2.5-sunburst` choice with variable token billing, saving that non-secret `OPENAI_THEME_IMAGE_MODEL` setting in Appwrite, and deploying the prepared server update. Supplying pricing does not approve any of these actions. Keep `OPENAI_THEME_MODEL=gpt-6-luna`, the existing secret key, database, storage, permissions, billing, and plan unchanged. If access would require another account, billing, credential, permission, or verification action, report that action for separate coordination instead of performing it.
+The reported November 1 approval covers the `gpt-image-2.5-sunburst` choice with variable token billing, saving `OPENAI_THEME_IMAGE_MODEL=gpt-image-2.5-sunburst` in Appwrite, and deploying the prepared server update. Dot coordinates those dashboard actions separately from Codex's publication. Keep `OPENAI_THEME_MODEL=gpt-6-luna`, the existing secret key, database, storage, permissions, billing, and plan unchanged. If access would require another account, billing, credential, permission, or verification action, report that action for separate coordination instead of performing it.
 
 No live generation or retry is required to inspect documentation, configuration, or deployment status. A later paid generation test needs its own authorization.
 
 ## Local verification
 
-The code correction and rebuilt bundle are in local commit `93cfd6859e1c0359e1d7d4e1fb31541423e40af9`. The following checks were completed for that code; this pricing follow-up changes documentation only.
+The code correction and rebuilt bundle are in commit `93cfd6859e1c0359e1d7d4e1fb31541423e40af9`, and pricing documentation is in `b31885bb299bf5bea1c38324efdae947c88ed408`. The following checks were completed for that code; the pricing and approval follow-ups change documentation only. A fresh no-write source build at publication review exactly matched the committed `main.js`.
 
 - `npm run test:appwrite`: 80 passed, zero failed or skipped; provider requests use injected mocks.
 - `npm test`: 87 passed, zero failed or skipped.
@@ -92,17 +96,25 @@ The code correction and rebuilt bundle are in local commit `93cfd6859e1c0359e1d7
 - `npm run build:appwrite`: rebuilt the Node.js 22 deployment bundle; importing its handler passed without making a provider request.
 - Regression coverage preserves Luna, JPEG options and private storage behavior; missing/retired image models produce zero provider calls; image failures retain safe error type/option names only in server logs; no model fallback or automatic retry is introduced.
 
-These are local checks only. No Appwrite/Vercel deployment, live provider call, key reveal, or production setting change was performed.
+These are local checks only. No Appwrite deployment, live provider call, key reveal, or dashboard setting change was performed by Codex. Publishing `main` can trigger the existing Vercel integration automatically; its build and production status must be checked separately, without claiming success from Git publication alone.
 
-## Deployment steps after separate approval
+## Approved Appwrite deployment steps for Dot
 
-1. Identify the exact reviewed source commit or archive containing the correction and rebuilt `appwrite/function/main.js`. Do not push to `main` as part of this handoff: a main push could trigger Vercel. This server-only correction does not require a website rebuild or Vercel configuration change.
+1. Use the exact remote commit verified in Codex's publication handoff. It contains the original fix and pricing commits plus this approval update. GitHub publication does not update the manually deployed Appwrite Function. This server-only correction requires no Vercel configuration change or manual website redeploy.
 2. Build the reviewed source with `npm run build:appwrite` before packaging, unless using its already rebuilt committed bundle. Appwrite runs the JavaScript bundle, not the unbundled TypeScript source. Do not reuse the old `1060661` bundle for this code update.
 3. Obtain exactly `appwrite/function/main.js`, `appwrite/function/package.json`, and `appwrite/function/package-lock.json` from that same approved source. If fetched from GitHub, verify each Git blob hash against the approved commit as Dot has done previously. Package those three files at the archive root; omit `.env` files, secrets, local dependencies, and unrelated repository files.
-4. Only after the separate configuration approval, save the approved `OPENAI_THEME_IMAGE_MODEL` in the existing Appwrite Function. Do not reveal or replace `OPENAI_API_KEY`; do not change Luna or image quality implicitly.
+4. Under Dwayne's reported approval, save exactly `OPENAI_THEME_IMAGE_MODEL=gpt-image-2.5-sunburst` in the existing Appwrite Function. Preserve `OPENAI_THEME_MODEL=gpt-6-luna` and medium image quality (the source default if no override is set). Do not reveal or replace `OPENAI_API_KEY`; do not change any other setting. Report an incompatible inherited override before changing anything outside the approved model selection.
 5. Upload the one-time source archive to existing project `6ae3ee7000368dcb80e7`, Function `circle-api`, at `https://fra.cloud.appwrite.io/v1`. Keep Node.js 22, entrypoint `main.js`, build command `npm ci --omit=dev`, and timeout 180 seconds. A redeploy of the old source alone cannot install this code correction.
 6. Preserve execution permission `users`; retain exactly `rows.read`, `rows.write`, `files.read`, `files.write`, and `tokens.write`. Preserve schedules/events, database, existing `circle-media` file security, bucket grants, extensions, size ceiling, and every other setting. Do not run provisioning or create a second bucket.
 7. Wait for a successful build and an active deployment. Record the new deployment ID, exact source version, build result, and presence of the approved non-secret image-model setting. Confirm the existing server secret stays marked Secret without opening its value. These checks establish deployment/configuration, not working hosted generation.
 8. Leave Vercel and its four public Appwrite variables unchanged. Report any differences from the approved source or settings before taking further action. Do not run a wallpaper generation, provider request, or paid retry to verify deployment.
 
-No deployment, push, live OpenAI request, credential reveal/change, permission change, storage change, billing change, or plan change is authorized by this diagnosis and handoff.
+Verify the three deployed source files against these Git blob hashes; the documentation-only follow-ups leave all three unchanged:
+
+| File at archive root | Repository path                       | Git blob SHA                               |
+| -------------------- | ------------------------------------- | ------------------------------------------ |
+| `main.js`            | `appwrite/function/main.js`           | `9007a0e4c7d8aabb0413bb9919b25c2729511861` |
+| `package.json`       | `appwrite/function/package.json`      | `179070395e599eeae177b52c4dddf5746d7b5b27` |
+| `package-lock.json`  | `appwrite/function/package-lock.json` | `54785bc26284ff14eb3b23b2161b5ae74fbe3c93` |
+
+The reported approval authorizes publication and Dot's coordinated model configuration/deployment. No live OpenAI request, paid retry, credential reveal/change, permission change, storage change, billing change, or plan change is authorized. No successful hosted generation is claimed.

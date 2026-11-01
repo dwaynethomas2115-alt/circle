@@ -1,10 +1,10 @@
 # AI wallpapers with Appwrite
 
-October 31 image-request follow-up: the deployed source's `gpt-image-1` default is retired. The prepared local fix requires an explicit supported `OPENAI_THEME_IMAGE_MODEL` before either AI request, without choosing one automatically. See [the current evidence and approval-dependent next steps](IMAGE_REQUEST_400.md). No replacement model or deployment has been authorized by this diagnosis.
+November 1 approval update: Dwayne approved publishing the image-request fix and Dot's coordinated configuration/deployment of `OPENAI_THEME_IMAGE_MODEL=gpt-image-2.5-sunburst`, without a paid test. The fix replaces the retired `gpt-image-1` source default with an explicit supported-model requirement before either AI request; it never chooses a replacement automatically. See [the current evidence, pricing limits, and deployment handoff](IMAGE_REQUEST_400.md). Codex's current step publishes to GitHub only and does not change Appwrite dashboard settings or deploy the Function.
 
 Circle uses your existing Appwrite project. A Circle owner or admin describes everyone's interests in one prompt, and OpenAI generates a colorful illustrated wallpaper combining those subjects. For example: “Anastasia loves pink and Barbie, and Daelin loves tornadoes and volcanoes. Make it bright and playful.” The app previews the image before you apply it.
 
-Dwayne approved sharing the existing `circle-media` bucket. New wallpapers use JPEG, which its existing extension list already accepts. The [shared storage deployment handoff](SHARED_WALLPAPER_STORAGE.md) replaces the earlier second-bucket requirement; no bucket, extension, permission, or plan change is needed. Dot reports matching shared-bucket server and client deployments from `1060661`. The newly prepared image-model validation and diagnostics fix is local only. No paid generation test is authorized here.
+Dwayne approved sharing the existing `circle-media` bucket. New wallpapers use JPEG, which its existing extension list already accepts. The [shared storage deployment handoff](SHARED_WALLPAPER_STORAGE.md) replaces the earlier second-bucket requirement; no bucket, extension, permission, or plan change is needed. Dot reports matching shared-bucket server and client deployments from `1060661`. The image-model validation and diagnostics fix still requires Dot's Appwrite deployment step; GitHub publication alone does not update that Function. No paid generation test is authorized here.
 
 ## Connect the existing Function
 
