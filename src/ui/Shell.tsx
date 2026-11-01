@@ -42,7 +42,7 @@ import { ThemeDecoration } from "../features/ThemeDecoration";
 export const navItems = [
   { label: "Home", path: "/", icon: Home },
   { label: "My Circles", path: "/circles", icon: Compass },
-  { label: "Create a post", path: "/create", icon: Plus },
+  { label: "Add memory", path: "/create", icon: Plus },
   { label: "Inbox", path: "/inbox", icon: MessageCircle },
   { label: "My profile", path: "/profile", icon: UserRound },
 ] as const;
@@ -134,7 +134,7 @@ function ThemedShell({
           : path === "/inbox"
             ? "The conversation"
             : path === "/create"
-              ? "A moment worth keeping"
+              ? "Add memory"
               : path === "/profile"
                 ? "Your personal space"
                 : "Your Circle";

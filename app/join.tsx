@@ -1,7 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { ArrowLeft, KeyRound, ArrowRight, Lock } from "lucide-react-native";
+import {
+  ArrowLeft,
+  KeyRound,
+  ArrowRight,
+  Lock,
+  Check,
+} from "lucide-react-native";
 import { useCircle } from "../src/state/CircleProvider";
 import {
   T,
@@ -24,6 +30,7 @@ export default function JoinCircle() {
   const [code, setCode] = useState(() => invitationCodeFromFragment(fragment));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [joinedCircleId, setJoinedCircleId] = useState<string | null>(null);
   const sequence = useRef(0);
   const scope = useRef({ userId: user?.id, fragment });
   scope.current = { userId: user?.id, fragment };
@@ -32,11 +39,13 @@ export default function JoinCircle() {
     setCode(invitationCodeFromFragment(fragment));
     setError("");
     setBusy(false);
+    setJoinedCircleId(null);
   }, [fragment]);
   useEffect(() => {
     ++sequence.current;
     setError("");
     setBusy(false);
+    setJoinedCircleId(null);
   }, [user?.id]);
   useEffect(
     () => () => {
@@ -65,8 +74,7 @@ export default function JoinCircle() {
     try {
       const result = await actions.redeemInvitation(requestedCode);
       if (!current()) return;
-      if (result.ok && result.id)
-        router.replace({ pathname: "/circle/[id]", params: { id: result.id } });
+      if (result.ok && result.id) setJoinedCircleId(result.id);
       else
         setError(
           result.error ||
@@ -105,81 +113,106 @@ export default function JoinCircle() {
             justifyContent: "center",
           }}
         >
-          <KeyRound size={29} color={c.teal} />
+          {joinedCircleId ? (
+            <Check size={29} color={c.teal} />
+          ) : (
+            <KeyRound size={29} color={c.teal} />
+          )}
         </View>
         <View style={{ gap: 10 }}>
           <T
+            accessibilityRole="header"
+            accessibilityLiveRegion="polite"
             style={{
               fontFamily: font.extra,
               fontSize: 29,
               letterSpacing: -0.8,
             }}
           >
-            You’re invited.
+            {joinedCircleId ? "Invitation accepted" : "Have an invitation?"}
           </T>
           <T style={{ color: c.muted, lineHeight: 23 }}>
-            {user
-              ? "Enter a private invitation code or paste an invitation link to join their Circle."
-              : "Sign in or create your Circle account, then choose whether to use this private invitation. Nothing is joined automatically."}
+            {joinedCircleId
+              ? "You’ve joined the Circle. Your membership is confirmed, and you can open its memories and chat."
+              : user
+                ? "Enter a private invitation code or paste an invitation link to join their Circle."
+                : "Sign in or create your Circle account, then choose whether to use this private invitation. Nothing is joined automatically."}
           </T>
         </View>
         {error ? <Banner text={error} onDismiss={() => setError("")} /> : null}
-        <Field
-          label="Invitation code"
-          accessibilityLabel="Invitation code"
-          value={code}
-          onChangeText={(value) => {
-            ++sequence.current;
-            setCode(value);
-            setError("");
-          }}
-          editable={!busy}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="Enter a code or paste an invitation link"
-          maxLength={2048}
-          onSubmitEditing={user ? join : undefined}
-        />
-        {!!code && !validCode && (
-          <T style={{ color: c.muted, fontSize: 12, lineHeight: 19 }}>
-            Use a valid invitation code or a Circle invitation link.
-          </T>
-        )}
-        {user ? (
+        {joinedCircleId ? (
           <Button
-            disabled={!validCode || busy}
             icon={ArrowRight}
-            onPress={join}
+            onPress={() =>
+              router.replace({
+                pathname: "/circle/[id]",
+                params: { id: joinedCircleId },
+              })
+            }
           >
-            {busy ? "Checking your invitation…" : "Join the Circle"}
+            Open Circle
           </Button>
         ) : (
-          <View style={{ gap: 12 }}>
-            <Button
-              icon={ArrowRight}
-              disabled={!!code && !validCode}
-              onPress={() =>
-                router.replace(invitationAuthRoute("signin", validCode))
-              }
-            >
-              Sign in to use invitation
-            </Button>
-            <Button
-              secondary
-              disabled={!!code && !validCode}
-              onPress={() =>
-                router.replace(invitationAuthRoute("signup", validCode))
-              }
-            >
-              Create an account to join
-            </Button>
-          </View>
+          <>
+            <Field
+              label="Invitation code"
+              accessibilityLabel="Invitation code"
+              value={code}
+              onChangeText={(value) => {
+                ++sequence.current;
+                setCode(value);
+                setError("");
+              }}
+              editable={!busy}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="Enter a code or paste an invitation link"
+              maxLength={2048}
+              onSubmitEditing={user ? join : undefined}
+            />
+            {!!code && !validCode && (
+              <T style={{ color: c.muted, fontSize: 12, lineHeight: 19 }}>
+                Use a valid invitation code or a Circle invitation link.
+              </T>
+            )}
+            {user ? (
+              <Button
+                disabled={!validCode || busy}
+                icon={ArrowRight}
+                onPress={join}
+              >
+                {busy ? "Checking your invitation…" : "Join the Circle"}
+              </Button>
+            ) : (
+              <View style={{ gap: 12 }}>
+                <Button
+                  icon={ArrowRight}
+                  disabled={!!code && !validCode}
+                  onPress={() =>
+                    router.replace(invitationAuthRoute("signin", validCode))
+                  }
+                >
+                  Sign in to use invitation
+                </Button>
+                <Button
+                  secondary
+                  disabled={!!code && !validCode}
+                  onPress={() =>
+                    router.replace(invitationAuthRoute("signup", validCode))
+                  }
+                >
+                  Create an account to join
+                </Button>
+              </View>
+            )}
+          </>
         )}
         <View style={{ flexDirection: "row", gap: 9, alignItems: "center" }}>
           <Lock size={13} color={c.muted} />
           <T style={{ color: c.muted, fontSize: 11, flex: 1, lineHeight: 18 }}>
-            Each invitation can be used once and expires after 7 days. Your
-            Circle stays private until you sign in and use a valid invitation.
+            {joinedCircleId
+              ? "Your invitation was accepted. This screen does not show private Circle content."
+              : "Each invitation can be used once and expires after 7 days. Circle content stays private until you sign in and use a valid invitation."}
           </T>
         </View>
       </Card>

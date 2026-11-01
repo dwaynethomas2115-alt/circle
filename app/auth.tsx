@@ -6,6 +6,8 @@ import { useCircle } from "../src/state/CircleProvider";
 import { T, Field, Button, Banner, IconButton } from "../src/ui/primitives";
 import { colors as c, font } from "../src/ui/theme";
 import { currentAccount } from "../src/lib/appwrite";
+import { PasswordRecovery } from "../src/ui/PasswordRecovery";
+import { recoveryCredentials } from "../src/lib/passwordRecovery";
 import {
   invitationAuthReturn,
   invitationAuthContext,
@@ -18,6 +20,8 @@ export default function Auth() {
     mode?: string;
     next?: string;
     "#"?: string;
+    userId?: string;
+    secret?: string;
   }>();
   const inviteContext = invitationAuthContext(params["#"]);
   const joining = !!inviteContext;
@@ -31,6 +35,13 @@ export default function Auth() {
   const [adult, setAdult] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [recovery, setRecovery] = useState<"request" | "reset" | null>(
+    params.mode === "reset" ? "reset" : null,
+  );
+  const [resetContext, setResetContext] = useState(() =>
+    recoveryCredentials(params),
+  );
+  const [resetVersion, setResetVersion] = useState(0);
   const { actions, mode, user, authStatus, retryConnection } = useCircle();
   const latestUserId = useRef(user?.id);
   latestUserId.current = user?.id;
@@ -41,6 +52,21 @@ export default function Auth() {
   useEffect(() => {
     setSignup(requestedMode === "signup");
   }, [requestedMode]);
+  useEffect(() => {
+    if (params.mode !== "reset") return;
+    ++sequence.current;
+    setBusy(false);
+    setPassword("");
+    setResetContext(
+      recoveryCredentials({ userId: params.userId, secret: params.secret }),
+    );
+    setRecovery("reset");
+    setResetVersion((version) => version + 1);
+    // Appwrite email links use query parameters. Remove their temporary secret
+    // from the address/history once captured; never log or persist it locally.
+    if (typeof window !== "undefined" && (params.userId || params.secret))
+      window.history.replaceState(window.history.state, "", "/auth?mode=reset");
+  }, [params.mode, params.userId, params.secret]);
   useEffect(() => {
     ++sequence.current;
     setBusy(false);
@@ -136,6 +162,24 @@ export default function Auth() {
       if (current()) setBusy(false);
     }
   };
+  if (recovery)
+    return (
+      <PasswordRecovery
+        key={`${recovery}:${resetVersion}`}
+        initialMode={recovery}
+        credentials={resetContext}
+        initialEmail={email}
+        onBack={() => {
+          const wasReset = recovery === "reset";
+          setRecovery(null);
+          setResetContext(null);
+          setPassword("");
+          setSignup(false);
+          setMessage("");
+          if (wasReset) router.replace("/auth?mode=signin");
+        }}
+      />
+    );
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: c.bg }}
@@ -276,10 +320,32 @@ export default function Auth() {
             editable={!busy}
             value={password}
             onChangeText={setPassword}
-            placeholder="At least 8 characters"
+            placeholder={signup ? "At least 8 characters" : "Enter password"}
             secureTextEntry
             autoComplete={signup ? "new-password" : "current-password"}
           />
+        )}
+        {mode === "appwrite" && !signup && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => {
+              setPassword("");
+              setMessage("");
+              setRecovery("request");
+            }}
+            style={{
+              alignSelf: "flex-end",
+              minHeight: 44,
+              justifyContent: "center",
+              marginTop: -6,
+              marginBottom: 8,
+            }}
+          >
+            <T style={{ color: c.teal, fontFamily: font.bold, fontSize: 12 }}>
+              Forgot password?
+            </T>
+          </Pressable>
         )}
         {signup && (
           <Pressable

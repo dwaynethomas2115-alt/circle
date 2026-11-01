@@ -189,10 +189,10 @@ export default function CreatePost() {
       if (result.canceled || !mounted.current) return;
       if (type === "images" && result.assets.length > remaining)
         throw new Error(
-          `You can add ${remaining} more ${remaining === 1 ? "photo" : "photos"} to this moment.`,
+          `You can add ${remaining} more ${remaining === 1 ? "photo" : "photos"} to this memory.`,
         );
       if (type === "videos" && result.assets.length !== 1)
-        throw new Error("Choose one video for this moment.");
+        throw new Error("Choose one video for this memory.");
       setStage("preparing");
       const chosen: ChosenMedia[] = [];
       // Prepare one image at a time, keeping large source photos out of parallel decoders.
@@ -320,14 +320,14 @@ export default function CreatePost() {
       else
         setError(
           result.error ||
-            "Could not share your moment. Your draft is still here.",
+            "Could not add your memory. Your draft is still here.",
         );
     } catch (cause) {
       if (mounted.current)
         setError(
           cause instanceof Error
             ? cause.message
-            : "Could not share your moment. Your draft is still here.",
+            : "Could not add your memory. Your draft is still here.",
         );
     } finally {
       uploadController.current = null;
@@ -340,7 +340,7 @@ export default function CreatePost() {
     return (
       <Empty
         title="Find your people first"
-        body="Join or create a Circle, then keep your first moment together."
+        body="Join or create a Circle, then add your first memory together."
       >
         <Button onPress={() => router.push("/circles")}>Explore Circles</Button>
       </Empty>
@@ -361,9 +361,10 @@ export default function CreatePost() {
           <View style={s.rule} />
           <T style={s.eyebrowText}>A PAGE IN YOUR STORY</T>
         </View>
-        <T style={[s.title, compact && { fontSize: 31 }]}>Keep this moment.</T>
+        <T style={[s.title, compact && { fontSize: 31 }]}>Add memory</T>
         <T style={s.subtitle}>
-          The big days. The ordinary ones. The things you’ll want to remember.
+          Write a note, add photos or a video, or combine them. Only your Circle
+          can see it.
         </T>
       </View>
       {!!error && <Banner text={error} onDismiss={() => setError("")} />}
@@ -376,7 +377,7 @@ export default function CreatePost() {
                 {user?.name || "You"}
               </T>
               <T style={{ color: c.muted, fontSize: 12 }}>
-                A moment for your people
+                A memory for your people
               </T>
             </View>
             <View style={s.privateBadge}>
@@ -419,6 +420,57 @@ export default function CreatePost() {
               </Pressable>
             ))}
           </ScrollView>
+        </View>
+
+        <View style={[s.captionSection, compact && { paddingHorizontal: 18 }]}>
+          <View style={s.captionHeading}>
+            <T style={s.label}>YOUR MEMORY</T>
+            <T style={{ fontSize: 10, color: c.muted }}>
+              {content.length.toLocaleString()} / 5,000
+            </T>
+          </View>
+          <Field
+            accessibilityLabel="Memory text"
+            placeholder="What do you want to remember?"
+            value={content}
+            onChangeText={setContent}
+            editable={!busy}
+            multiline
+            maxLength={5000}
+            style={s.caption}
+          />
+          <View style={s.attachments}>
+            <Button
+              secondary
+              icon={ImageIcon}
+              disabled={busy || hasVideo || media.length >= MAX_POST_PHOTOS}
+              onPress={() => pick("images")}
+            >
+              Photo
+            </Button>
+            <Button
+              secondary
+              icon={VideoIcon}
+              disabled={busy || media.length > 0}
+              onPress={() => pick("videos")}
+            >
+              Video
+            </Button>
+            <T style={s.attachmentHint}>
+              {hasVideo
+                ? "One video, one memory"
+                : media.length
+                  ? `${media.length} of ${MAX_POST_PHOTOS} photos`
+                  : "Photos and video are optional."}
+            </T>
+          </View>
+          {!!media.length && (
+            <T style={s.mediaNote}>
+              {hasVideo
+                ? "Videos up to 10 minutes · 250 MB. Original video metadata may remain in the file."
+                : `Photos up to 200 MB each. The first photo is your album’s cover.`}
+            </T>
+          )}
         </View>
 
         <View style={[s.mediaSection, compact && { marginHorizontal: 12 }]}>
@@ -488,31 +540,7 @@ export default function CreatePost() {
                 )}
               </View>
             </View>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add photos to your moment"
-              disabled={busy}
-              onPress={() => pick("images")}
-              style={s.emptyMedia}
-            >
-              <View style={s.photoIcon}>
-                <ImageIcon size={29} color={c.teal} strokeWidth={1.3} />
-                <View style={s.plusMark}>
-                  <Plus size={12} color="white" />
-                </View>
-              </View>
-              <T style={s.emptyTitle}>Start with a photo. Or a few.</T>
-              <T style={s.emptyBody}>
-                Collect up to {MAX_POST_PHOTOS} photos in one moment, or share a
-                video.
-              </T>
-              <View style={s.emptyLinkRow}>
-                <T style={s.emptyLink}>Choose something worth keeping</T>
-                <ArrowRight size={11} color={c.teal} />
-              </View>
-            </Pressable>
-          )}
+          ) : null}
 
           {media.length > 1 && (
             <View style={s.albumTools}>
@@ -634,7 +662,7 @@ export default function CreatePost() {
               <T style={{ fontFamily: font.bold, fontSize: 12 }}>
                 {preparing.total > 1
                   ? `Preparing photo ${preparing.current} of ${preparing.total}…`
-                  : "Preparing your moment…"}
+                  : "Preparing your memory…"}
               </T>
               <T style={{ color: c.muted, fontSize: 11 }}>
                 Keeping the details worth remembering.
@@ -642,57 +670,6 @@ export default function CreatePost() {
             </View>
           </View>
         )}
-
-        <View style={[s.captionSection, compact && { paddingHorizontal: 18 }]}>
-          <View style={s.captionHeading}>
-            <T style={s.label}>THE WORDS UNDERNEATH</T>
-            <T style={{ fontSize: 10, color: c.muted }}>
-              {content.length.toLocaleString()} / 5,000
-            </T>
-          </View>
-          <Field
-            accessibilityLabel="Post content"
-            placeholder="What’s the story behind this moment?"
-            value={content}
-            onChangeText={setContent}
-            editable={!busy}
-            multiline
-            maxLength={5000}
-            style={s.caption}
-          />
-          <View style={s.attachments}>
-            <Button
-              secondary
-              icon={ImageIcon}
-              disabled={busy || hasVideo || media.length >= MAX_POST_PHOTOS}
-              onPress={() => pick("images")}
-            >
-              Photo
-            </Button>
-            <Button
-              secondary
-              icon={VideoIcon}
-              disabled={busy || media.length > 0}
-              onPress={() => pick("videos")}
-            >
-              Video
-            </Button>
-            <T style={s.attachmentHint}>
-              {hasVideo
-                ? "One video, one moment"
-                : media.length
-                  ? `${media.length} of ${MAX_POST_PHOTOS} photos`
-                  : "A thought on its own is welcome, too."}
-            </T>
-          </View>
-          {!!media.length && (
-            <T style={s.mediaNote}>
-              {hasVideo
-                ? "Videos up to 10 minutes · 250 MB. Original video metadata may remain in the file."
-                : `Photos up to 200 MB each. The first photo is your album’s cover.`}
-            </T>
-          )}
-        </View>
 
         <View
           style={[
@@ -726,7 +703,7 @@ export default function CreatePost() {
                 : "Sharing…"
               : stage === "preparing" || stage === "choosing"
                 ? "Preparing…"
-                : "Share moment"}
+                : "Add memory"}
           </Button>
         </View>
         {stage === "sharing" && (
@@ -734,7 +711,7 @@ export default function CreatePost() {
             accessibilityRole="progressbar"
             accessibilityLabel={
               mode === "demo"
-                ? "Saving your moment"
+                ? "Saving your memory"
                 : `Uploading your media: ${Math.round(overallProgress * 100)} percent`
             }
             accessibilityValue={{
@@ -756,7 +733,7 @@ export default function CreatePost() {
               <ActivityIndicator size="small" color={c.teal} />
               <T style={s.uploadText}>
                 {mode === "demo"
-                  ? "Saving your moment on this device…"
+                  ? "Saving your memory on this device…"
                   : media.length
                     ? uploadProgress
                       ? progressFraction === 1 && itemIndex === itemCount
@@ -807,12 +784,12 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
-    marginBottom: 25,
+    marginBottom: 16,
     alignSelf: "flex-start",
     minHeight: 28,
   },
   backText: { color: c.muted, fontSize: 12 },
-  pageHeading: { marginBottom: 27 },
+  pageHeading: { marginBottom: 20 },
   eyebrow: {
     flexDirection: "row",
     alignItems: "center",
@@ -845,7 +822,7 @@ const s = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
   },
-  top: { padding: 24, paddingBottom: 20 },
+  top: { padding: 24, paddingBottom: 8 },
   author: {
     flexDirection: "row",
     alignItems: "center",
@@ -886,64 +863,7 @@ const s = StyleSheet.create({
     backgroundColor: "#FAFAF7",
   },
   circleSelected: { borderColor: "#AEC3AE", backgroundColor: "#EFF4EC" },
-  mediaSection: { marginHorizontal: 16 },
-  emptyMedia: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 42,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#D8E0D4",
-    backgroundColor: "#F8F9F4",
-    minHeight: 240,
-  },
-  photoIcon: {
-    width: 63,
-    height: 61,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#EDF2E7",
-    borderRadius: 17,
-    marginBottom: 19,
-  },
-  plusMark: {
-    position: "absolute",
-    bottom: 4,
-    right: 3,
-    backgroundColor: c.teal,
-    padding: 3,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#F8F9F4",
-  },
-  emptyTitle: {
-    fontFamily: font.heading,
-    fontSize: 18,
-    letterSpacing: -0.5,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  emptyBody: {
-    color: c.muted,
-    fontSize: 12,
-    lineHeight: 20,
-    textAlign: "center",
-    maxWidth: 270,
-  },
-  emptyLink: {
-    color: c.teal,
-    fontFamily: font.bold,
-    fontSize: 11,
-    textAlign: "center",
-  },
-  emptyLinkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 20,
-  },
+  mediaSection: { marginHorizontal: 16, marginBottom: 18 },
   preview: {
     borderWidth: 1,
     borderColor: "#E8EBE3",
@@ -1033,7 +953,7 @@ const s = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#FCFCF9",
   },
-  captionSection: { paddingTop: 25, paddingHorizontal: 24, paddingBottom: 21 },
+  captionSection: { paddingTop: 12, paddingHorizontal: 24, paddingBottom: 18 },
   captionHeading: {
     flexDirection: "row",
     justifyContent: "space-between",

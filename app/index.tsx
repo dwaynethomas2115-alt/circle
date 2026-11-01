@@ -102,7 +102,7 @@ export default function Home() {
         </View>
         {!mobile && (
           <Button icon={Plus} onPress={() => go("/create")}>
-            Share a moment
+            Add memory
           </Button>
         )}
       </View>
@@ -192,14 +192,14 @@ export default function Home() {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Create a post"
+              accessibilityLabel="Add memory"
               onPress={() => go("/create")}
               style={s.composerPrompt}
             >
               <Avatar name={user?.name || "You"} uri={user?.avatar} size={40} />
               <View style={{ flex: 1, gap: 4 }}>
                 <T style={{ fontFamily: font.medium, fontSize: 14 }}>
-                  What do you want to remember?
+                  Add memory
                 </T>
                 {!mobile && (
                   <T style={{ fontSize: 12, color: c.muted }}>
@@ -207,14 +207,9 @@ export default function Home() {
                   </T>
                 )}
               </View>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add photos to a moment"
-              onPress={() => go("/create")}
-              style={s.photoButton}
-            >
-              <ImageIcon size={20} color={c.teal} strokeWidth={1.6} />
+              <View pointerEvents="none" style={s.photoButton}>
+                <ImageIcon size={20} color={c.teal} strokeWidth={1.6} />
+              </View>
             </Pressable>
           </Card>
           <View style={[s.feedToolbar, mobile && { marginTop: 17 }]}>
@@ -395,7 +390,7 @@ export default function Home() {
                     : "Keep a photo, start a conversation, or share a small part of your day."
               }
             >
-              <Button onPress={() => go("/create")}>Share a moment</Button>
+              <Button onPress={() => go("/create")}>Add memory</Button>
             </Empty>
           )}
           {!!visible.length && (

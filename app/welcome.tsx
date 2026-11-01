@@ -91,14 +91,28 @@ export default function Welcome() {
               paddingHorizontal: 26,
             }}
           >
-            Find your Circle
+            Get started
           </Button>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => router.push("/join")}
+            style={{
+              alignSelf: "flex-start",
+              minHeight: 44,
+              justifyContent: "center",
+              marginTop: 8,
+            }}
+          >
+            <T style={{ fontFamily: font.bold, color: c.teal, fontSize: 13 }}>
+              Have an invitation?
+            </T>
+          </Pressable>
           <View
             style={{
               flexDirection: "row",
               alignItems: "center",
               gap: 6,
-              marginTop: 20,
+              marginTop: 8,
             }}
           >
             <T style={{ color: c.muted, fontSize: 13 }}>

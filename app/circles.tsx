@@ -65,10 +65,19 @@ export default function CirclesScreen() {
   }
   return (
     <View style={{ gap: 24 }}>
-      <View style={s.titleRow}>
-        <View style={{ gap: 8, flex: 1 }}>
+      <View
+        style={[
+          s.titleRow,
+          width < 650 && { flexDirection: "column", alignItems: "stretch" },
+        ]}
+      >
+        <View
+          style={{ gap: 8, flex: width < 650 ? undefined : 1, minWidth: 0 }}
+        >
           <T style={s.eyebrow}>THE PEOPLE. THE PLACES. THE STORIES.</T>
-          <T style={s.title}>Every Circle, a shared story.</T>
+          <T style={[s.title, width < 650 && { fontSize: 30, lineHeight: 37 }]}>
+            Every Circle, a shared story.
+          </T>
           <T style={{ color: c.muted, lineHeight: 22 }}>
             A family album. A weekend away. An everyday kind of belonging.
           </T>
@@ -132,6 +141,15 @@ export default function CirclesScreen() {
           />
         </View>
       </View>
+      {tab === "pending" && (
+        <View style={{ flexDirection: "row", gap: 9, alignItems: "center" }}>
+          <Clock size={14} color={c.orange} />
+          <T style={{ color: c.muted, fontSize: 12, flex: 1, lineHeight: 19 }}>
+            Waiting for a Circle admin to approve your request. Memories and
+            chat stay private until your membership is approved.
+          </T>
+        </View>
+      )}
       {tab === "discover" && (
         <View
           style={{
@@ -159,6 +177,14 @@ export default function CirclesScreen() {
             .map((m) => state.users.find((u) => u.id === m.userId))
             .filter(Boolean);
           const isPending = pending.some((r) => r.circleId === circle.id);
+          const approvedRequest =
+            ids.has(circle.id) &&
+            state.requests.some(
+              (request) =>
+                request.circleId === circle.id &&
+                request.userId === user?.id &&
+                request.status === "approved",
+            );
           return (
             <Card
               key={circle.id}
@@ -272,7 +298,9 @@ export default function CirclesScreen() {
                   )}
                   <T style={{ marginLeft: 8, fontSize: 11, color: c.muted }}>
                     {ids.has(circle.id)
-                      ? `${memberCount} ${memberCount === 1 ? "person" : "people"}`
+                      ? approvedRequest
+                        ? "Membership approved"
+                        : `${memberCount} ${memberCount === 1 ? "person" : "people"}`
                       : "A private community"}
                   </T>
                 </View>
@@ -292,7 +320,9 @@ export default function CirclesScreen() {
                     }}
                   >
                     <Clock size={13} color={c.orange} />
-                    <T style={{ fontSize: 12, color: c.muted }}>Requested</T>
+                    <T style={{ fontSize: 12, color: c.muted }}>
+                      Pending approval
+                    </T>
                   </View>
                 ) : (
                   <Button secondary onPress={() => request(circle.id)}>
