@@ -184,7 +184,7 @@ export function CoverCropper({
     <View style={{ gap: 14 }}>
       <View
         testID="circle-cover-cropper"
-        accessibilityLabel="Cover crop preview. Drag the photo to reposition it."
+        accessibilityLabel="Circle photo crop preview. Drag the photo to reposition it."
         onLayout={(event) =>
           setFrameWidth(Math.max(1, event.nativeEvent.layout.width))
         }
@@ -199,7 +199,7 @@ export function CoverCropper({
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           <Image
             testID="circle-cover-preview"
-            accessibilityLabel="Circle cover photo preview"
+            accessibilityLabel="Circle photo preview"
             source={{ uri }}
             resizeMode="stretch"
             onLoad={onLoad}

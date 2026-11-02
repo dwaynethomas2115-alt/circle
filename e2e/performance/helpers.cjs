@@ -568,7 +568,7 @@ async function ready(h, route = "/circle/family") {
   const start = Date.now();
   await h.page.goto(base + route);
   await expect(
-    h.page.getByText("Circle journal", { exact: true }),
+    h.page.getByRole("tab", { name: "Memories", exact: true }),
   ).toBeVisible();
   await h.page.waitForFunction(
     () => !document.body.textContent.includes("Loading photo…"),

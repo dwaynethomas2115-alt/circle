@@ -4,10 +4,11 @@ import {
   Pressable,
   Switch,
   Image,
+  Platform,
   useWindowDimensions,
 } from "react-native";
 import { router } from "expo-router";
-import { ArrowLeft, Plus, Lock, ImagePlus, Users } from "lucide-react-native";
+import { ArrowLeft, Plus, Lock, Camera } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useCircle } from "../src/state/CircleProvider";
 import {
@@ -29,26 +30,29 @@ export default function NewCircle() {
   const [discoverable, setDiscoverable] = useState(false);
   const [approval, setApproval] = useState(true);
   const [cover, setCover] = useState("");
-  const [avatar, setAvatar] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function pick(which: "cover" | "avatar") {
+  async function pick() {
+    if (busy) return;
     try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setError("Please allow photo access to choose a Circle image.");
-        return;
+      // Keep the browser file picker attached to the direct user gesture.
+      if (Platform.OS !== "web") {
+        const permission =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          setError("Please allow photo access to choose a Circle photo.");
+          return;
+        }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsEditing: true,
-        aspect: which === "cover" ? [3, 1] : [1, 1],
+        aspect: [1, 1],
         quality: 0.85,
         exif: false,
       });
-      if (!result.canceled)
-        (which === "cover" ? setCover : setAvatar)(result.assets[0].uri);
+      if (!result.canceled && result.assets?.[0]?.uri)
+        setCover(result.assets[0].uri);
     } catch {
       setError("Your photos could not be opened. Please try again.");
     }
@@ -65,7 +69,7 @@ export default function NewCircle() {
         description: description.trim(),
         category,
         cover,
-        avatar,
+        avatar: "",
         discoverable,
         approvalRequired: approval,
       });
@@ -97,47 +101,6 @@ export default function NewCircle() {
       </View>
       {error ? <Banner text={error} onDismiss={() => setError("")} /> : null}
       <Card>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Choose Circle cover image"
-          onPress={() => pick("cover")}
-          style={{
-            height: 190,
-            backgroundColor: "#E4EEE5",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-          }}
-        >
-          {cover ? (
-            <Image
-              source={{ uri: cover }}
-              style={{ width: "100%", height: "100%", position: "absolute" }}
-            />
-          ) : (
-            <>
-              <ImagePlus size={30} color={c.teal} />
-              <T style={{ fontFamily: font.bold, color: c.teal }}>
-                Add a cover photo
-              </T>
-              <T style={{ fontSize: 12, color: c.muted }}>
-                Set the mood for your Circle
-              </T>
-            </>
-          )}
-          <View
-            style={{
-              position: "absolute",
-              right: 16,
-              bottom: 15,
-              backgroundColor: "white",
-              borderRadius: 10,
-              padding: 9,
-            }}
-          >
-            <ImagePlus size={17} color={c.teal} />
-          </View>
-        </Pressable>
         <View style={{ padding: width < 600 ? 20 : 32 }}>
           <View
             style={{
@@ -149,31 +112,37 @@ export default function NewCircle() {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Choose Circle avatar"
-              onPress={() => pick("avatar")}
+              accessibilityLabel={
+                cover ? "Change Circle photo" : "Add Circle photo"
+              }
+              accessibilityHint="Choose an optional photo for your Circle"
+              accessibilityState={{ disabled: busy }}
+              disabled={busy}
+              onPress={() => void pick()}
               style={{
                 width: 64,
                 height: 64,
-                borderRadius: 20,
+                borderRadius: 32,
                 backgroundColor: c.mint,
                 alignItems: "center",
                 justifyContent: "center",
                 overflow: "hidden",
+                opacity: busy ? 0.5 : 1,
               }}
             >
-              {avatar ? (
+              {cover ? (
                 <Image
-                  source={{ uri: avatar }}
+                  source={{ uri: cover }}
                   style={{ width: 64, height: 64 }}
                 />
               ) : (
-                <Users size={28} color={c.teal} />
+                <Camera size={25} color={c.teal} />
               )}
             </Pressable>
-            <View style={{ gap: 4 }}>
-              <T style={{ fontFamily: font.bold }}>Give your Circle a face</T>
+            <View style={{ flex: 1, gap: 4 }}>
+              <T style={{ fontFamily: font.bold }}>Circle photo</T>
               <T style={{ color: c.muted, fontSize: 12 }}>
-                Tap to add an avatar · optional
+                Optional · You can change it later.
               </T>
             </View>
           </View>

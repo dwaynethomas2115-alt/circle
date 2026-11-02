@@ -37,7 +37,7 @@ export function CircleCoverEditor({
   onClose,
   circleId,
   onSaved,
-  targetAspectRatio = 3,
+  targetAspectRatio = 1,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -70,7 +70,7 @@ export function CircleCoverEditor({
   const aspect =
     Number.isFinite(targetAspectRatio) && targetAspectRatio > 0
       ? targetAspectRatio
-      : 3;
+      : 1;
   const selected = canEdit && draft?.scope === scope ? draft : null;
   const previewUri = selected?.uri || circle?.cover;
   const previewKey = selected
@@ -125,9 +125,7 @@ export function CircleCoverEditor({
           await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!current(pending)) return;
         if (!permission.granted) {
-          setError(
-            "Please allow photo access to choose your Circle cover photo.",
-          );
+          setError("Please allow photo access to choose your Circle photo.");
           return;
         }
       }
@@ -140,7 +138,7 @@ export function CircleCoverEditor({
       if (!current(pending) || result.canceled) return;
       const asset = result.assets?.[0];
       if (!asset?.uri || asset.type === "video") {
-        setError("Choose a photo for your Circle header.");
+        setError("Choose an image for your Circle.");
         return;
       }
       let imageWidth = asset.width,
@@ -205,7 +203,7 @@ export function CircleCoverEditor({
       if (!result.ok) {
         setError(
           result.error ||
-            "Your cover photo could not be saved. Please try again.",
+            "Your Circle photo could not be saved. Please try again.",
         );
         return;
       }
@@ -215,7 +213,7 @@ export function CircleCoverEditor({
       if (current(pending))
         setError(
           submitted
-            ? "We couldn’t confirm the cover change. Reopen your Circle to check before trying again."
+            ? "We couldn’t confirm the Circle photo change. Reopen your Circle to check before trying again."
             : "This photo could not be cropped. Choose it again or try a different photo.",
         );
     } finally {
@@ -249,15 +247,15 @@ export function CircleCoverEditor({
           <View style={s.heading}>
             <View style={{ flex: 1, gap: 6 }}>
               <T style={{ fontFamily: font.heading, fontSize: 23 }}>
-                Circle cover photo
+                Circle photo
               </T>
               <T style={s.description}>
-                Choose the photo at the top of your Circle.
+                Choose the small picture beside your Circle’s name.
               </T>
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Close cover photo editor"
+              accessibilityLabel="Close Circle photo editor"
               accessibilityState={{ disabled: !!busy }}
               disabled={!!busy}
               onPress={close}
@@ -313,7 +311,7 @@ export function CircleCoverEditor({
                   <Image
                     key={previewKey}
                     testID="circle-cover-preview"
-                    accessibilityLabel="Circle cover photo preview"
+                    accessibilityLabel="Circle photo preview"
                     source={{ uri: previewUri }}
                     resizeMode="cover"
                     style={StyleSheet.absoluteFill}
@@ -340,7 +338,7 @@ export function CircleCoverEditor({
                   <View style={s.placeholder}>
                     <Camera size={30} color={theme.accent} />
                     <T style={{ fontFamily: font.bold, color: theme.accent }}>
-                      Add your Circle’s cover photo
+                      Add your Circle’s photo
                     </T>
                   </View>
                 )}
@@ -348,7 +346,7 @@ export function CircleCoverEditor({
             )}
             <T style={s.description}>
               Choose a photo, then move and zoom it inside the frame. Only that
-              part of the photo is saved. Your current cover stays in place
+              part of the photo is saved. Your current photo stays in place
               until you save.
             </T>
             <View style={{ alignItems: "flex-start" }}>
@@ -358,7 +356,7 @@ export function CircleCoverEditor({
                 disabled={!!busy}
                 onPress={() => void choosePhoto()}
               >
-                {busy === "pick" ? "Opening photos…" : "Choose cover photo"}
+                {busy === "pick" ? "Opening photos…" : "Choose Circle photo"}
               </Button>
             </View>
             <View style={s.buttons}>
@@ -367,7 +365,7 @@ export function CircleCoverEditor({
                 disabled={!!busy || !selected || loadedUri !== selected.uri}
                 onPress={() => void save()}
               >
-                {busy === "save" ? "Saving cover photo…" : "Save cover photo"}
+                {busy === "save" ? "Saving Circle photo…" : "Save Circle photo"}
               </Button>
               <Button secondary disabled={!!busy} onPress={close}>
                 Cancel

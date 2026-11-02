@@ -140,6 +140,13 @@ function ThemedShell({
                 : "Your Circle";
   if (bare) return <>{children}</>;
   const go = (p: string) => router.push(p as never);
+  const currentCircleId = decorated
+    ? path.match(/^\/circle\/([^/]+)/)?.[1]
+    : undefined;
+  const navDestination = (destination: string) =>
+    destination === "/create" && currentCircleId
+      ? `/create?circleId=${encodeURIComponent(currentCircleId)}`
+      : destination;
   return (
     <KeyboardAvoidingView
       style={[s.root, { backgroundColor: theme.background }]}
@@ -170,7 +177,7 @@ function ThemedShell({
                 <Pressable
                   key={p}
                   accessibilityRole="link"
-                  onPress={() => go(p)}
+                  onPress={() => go(navDestination(p))}
                   style={({ pressed }) => [
                     s.navItem,
                     active && { backgroundColor: tint },
@@ -469,7 +476,13 @@ function ThemedShell({
               <Pressable
                 key={p}
                 accessibilityRole="link"
-                onPress={() => go(p)}
+                accessibilityLabel={label}
+                accessibilityState={{
+                  selected:
+                    path === p ||
+                    (p === "/circles" && path.startsWith("/circle/")),
+                }}
+                onPress={() => go(navDestination(p))}
                 style={{ alignItems: "center", gap: 5, flex: 1 }}
               >
                 <View
@@ -484,7 +497,8 @@ function ThemedShell({
                     color={
                       p === "/create"
                         ? "white"
-                        : path === p
+                        : path === p ||
+                            (p === "/circles" && path.startsWith("/circle/"))
                           ? theme.accent
                           : "#8A9890"
                     }
@@ -494,7 +508,11 @@ function ThemedShell({
                   <T
                     style={{
                       fontSize: 9,
-                      color: path === p ? theme.accent : "#8A9890",
+                      color:
+                        path === p ||
+                        (p === "/circles" && path.startsWith("/circle/"))
+                          ? theme.accent
+                          : "#8A9890",
                       fontFamily: font.medium,
                     }}
                   >

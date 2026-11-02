@@ -172,7 +172,7 @@ async function loadedAspect(image) {
           h.revoke();
           await h.refresh();
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toHaveCount(0);
           await expect(h.page.getByTestId("circle-cover-image")).toHaveCount(0);
           await expect(
@@ -195,7 +195,7 @@ async function loadedAspect(image) {
           h.accountFail(status);
           await h.refresh();
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toHaveCount(0);
           await expect(h.page.getByTestId("circle-cover-image")).toHaveCount(0);
           if (status === 500)
@@ -325,13 +325,16 @@ async function loadedAspect(image) {
         async () => {
           const h = await fixture(browser, { width: 390, posts: 3 });
           await ready(h);
+          await expect(
+            h.page.getByTestId("circle-wallpaper-frame"),
+          ).toBeVisible();
           h.wallpaperFail(403);
           await h.refresh();
           await expect(
             h.page.getByTestId("circle-wallpaper-frame"),
           ).toHaveCount(0);
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toBeVisible();
           assert.equal(
             await h.page
@@ -355,7 +358,7 @@ async function loadedAspect(image) {
           h.switchAccount();
           await h.refresh();
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toHaveCount(0);
           await expect(h.page.getByTestId("circle-cover-image")).toHaveCount(0);
           await expect(
@@ -561,7 +564,7 @@ async function loadedAspect(image) {
             h.page.getByText("Reconnect to Circle", { exact: true }),
           ).toBeVisible();
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toHaveCount(0);
           await expect(h.page.getByTestId("circle-cover-image")).toHaveCount(0);
           await h.finish(
@@ -586,7 +589,7 @@ async function loadedAspect(image) {
             0,
           );
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toBeVisible();
           const after = await h.metrics();
           assert.ok(after.dom.removed > initial.dom.removed);
@@ -675,7 +678,7 @@ async function loadedAspect(image) {
           held.release();
           await delay(250);
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toHaveCount(0);
           await expect(h.page.getByTestId("circle-cover-image")).toHaveCount(0);
           assert.equal(
@@ -710,7 +713,7 @@ async function loadedAspect(image) {
           const held = h.heldImage();
           await h.page.goto(base + "/circle/family");
           await expect(
-            h.page.getByText("Circle journal", { exact: true }),
+            h.page.getByRole("tab", { name: "Memories", exact: true }),
           ).toBeVisible();
           await held.started;
           await h.page.getByRole("link", { name: /Other Place/ }).click();

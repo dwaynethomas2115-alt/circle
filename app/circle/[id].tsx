@@ -28,7 +28,7 @@ import {
   Video,
   CalendarDays,
   BarChart3,
-  ArrowDownUp,
+  SlidersHorizontal,
   BookOpen,
   Camera,
   MoreHorizontal,
@@ -50,6 +50,7 @@ import {
 } from "../../src/ui/primitives";
 import { PostCard } from "../../src/ui/PostCard";
 import { InviteSheet } from "../../src/ui/InviteSheet";
+import { MemoryFiltersSheet } from "../../src/ui/MemoryFiltersSheet";
 import { CircleCoverEditor } from "../../src/ui/CircleCoverEditor";
 import {
   CircleOptionsSheet,
@@ -164,7 +165,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   const [coverEditorOpen, setCoverEditorOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [coverFocused, setCoverFocused] = useState(false);
-  const [coverAspectRatio, setCoverAspectRatio] = useState(3);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [leaveConfirm, setLeaveConfirm] = useState(false);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
@@ -173,13 +174,15 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
     (x) => x.circleId === id && x.userId === user?.id,
   );
   const members = state.members.filter((x) => x.circleId === id);
-  const compactConversation = !!membership && tab === "Chat";
   const isManager = membership && ["owner", "admin"].includes(membership.role);
   useEffect(() => {
     if (!isManager) setCoverEditorOpen(false);
   }, [isManager]);
   useEffect(() => {
-    if (!membership) setOptionsOpen(false);
+    if (!membership) {
+      setOptionsOpen(false);
+      setFiltersOpen(false);
+    }
   }, [membership]);
   const isModerator =
     membership && ["owner", "admin", "moderator"].includes(membership.role);
@@ -382,7 +385,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
       ? [
           {
             label: "Circle settings",
-            detail: "Cover photo, wallpaper, and Circle details",
+            detail: "Circle photo, wallpaper, and Circle details",
             icon: Settings,
             onPress: () => showTab("Settings"),
           },
@@ -453,13 +456,13 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
     </View>
   ) : null;
   return (
-    <View style={{ gap: compactConversation ? 14 : 20 }}>
+    <View style={{ gap: 12 }}>
       <CircleCoverEditor
         visible={coverEditorOpen}
         onClose={() => setCoverEditorOpen(false)}
         circleId={id}
-        targetAspectRatio={coverAspectRatio}
-        onSaved={() => setNotice("Your Circle cover photo has been updated.")}
+        targetAspectRatio={1}
+        onSaved={() => setNotice("Your Circle photo has been updated.")}
       />
       <InviteSheet
         visible={inviteOpen}
@@ -471,176 +474,136 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
         onClose={() => setOptionsOpen(false)}
         options={options}
       />
-      <View testID="circle-header">
+      <MemoryFiltersSheet
+        visible={filtersOpen && !!membership}
+        onClose={() => setFiltersOpen(false)}
+        months={memoryMonths.map((value) => ({
+          value,
+          label: monthLabel(value),
+        }))}
+        month={memoryMonth}
+        oldestFirst={oldestFirst}
+        onMonthChange={setMemoryMonth}
+        onOrderChange={setOldestFirst}
+        onReset={() => {
+          setMemoryMonth("all");
+          setOldestFirst(false);
+        }}
+      />
+      <View testID="circle-header" style={s.header}>
         <Card>
-          {compactConversation ? (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                padding: width < 650 ? 12 : 16,
-              }}
+          <View style={s.identityRow}>
+            <Pressable
+              testID={isManager ? "circle-cover-change" : undefined}
+              accessibilityRole={isManager ? "button" : "image"}
+              accessibilityLabel={
+                isManager
+                  ? circle.cover
+                    ? "Change Circle photo"
+                    : "Add Circle photo"
+                  : `${circle.name} photo`
+              }
+              accessibilityHint={
+                isManager
+                  ? "Choose a photo, then move and zoom it before saving"
+                  : undefined
+              }
+              disabled={!isManager}
+              onFocus={() => setCoverFocused(true)}
+              onBlur={() => setCoverFocused(false)}
+              onPress={() => setCoverEditorOpen(true)}
+              style={({ pressed }) => [
+                s.circlePhoto,
+                {
+                  backgroundColor: circle.color,
+                  borderColor: coverFocused ? palette.teal : "transparent",
+                  opacity: pressed ? 0.8 : 1,
+                },
+              ]}
             >
-              <IconButton
-                icon={ArrowLeft}
-                label="Back to Circles"
-                onPress={() => router.push("/circles")}
-                size={19}
-                style={{ width: 44, height: 44 }}
-              />
-              {width >= 650 && (
+              {circle.cover ? (
+                <StableImage
+                  testID="circle-cover-image"
+                  uri={circle.cover}
+                  circleId={id}
+                  style={{ width: "100%", height: "100%", borderRadius: 22 }}
+                  resizeMode="cover"
+                />
+              ) : (
                 <CircleAvatar
                   avatar={circle.avatar}
                   color={circle.color}
-                  size={34}
+                  size={40}
                 />
               )}
-              <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-                <T
-                  numberOfLines={1}
-                  style={{
-                    fontFamily: font.editorial,
-                    fontSize: width < 650 ? 22 : 28,
-                    letterSpacing: -0.4,
-                  }}
+              {isManager && (
+                <View
+                  style={[s.photoEditBadge, { backgroundColor: palette.white }]}
                 >
-                  {circle.name}
-                </T>
-                <T
-                  numberOfLines={1}
-                  style={{ fontSize: 11, color: palette.muted }}
-                >
-                  Private · {members.length}{" "}
-                  {members.length === 1 ? "member" : "members"}
-                </T>
-              </View>
-              {headerActions}
-            </View>
-          ) : (
-            <>
-              <View
-                testID="circle-cover-frame"
-                onLayout={({ nativeEvent: { layout } }) => {
-                  if (layout.width <= 0 || layout.height <= 0) return;
-                  const ratio = layout.width / layout.height;
-                  setCoverAspectRatio((previous) =>
-                    Math.abs(previous - ratio) < 0.001 ? previous : ratio,
-                  );
-                }}
+                  <Camera size={10} color={palette.ink} />
+                </View>
+              )}
+            </Pressable>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+              <T
+                numberOfLines={1}
+                accessibilityRole="header"
                 style={{
-                  height: width < 650 ? 112 : 168,
-                  backgroundColor: circle.color,
-                  overflow: "hidden",
+                  fontFamily: font.editorial,
+                  fontSize: width < 650 ? 20 : 25,
+                  letterSpacing: -0.4,
                 }}
               >
-                {circle.cover ? (
-                  <StableImage
-                    testID="circle-cover-image"
-                    uri={circle.cover}
-                    circleId={id}
-                    style={{ height: "100%", width: "100%" }}
-                  />
-                ) : (
-                  <View
-                    style={{
-                      flex: 1,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <View style={s.coverRing} />
-                    <Users size={48} color="#FFFFFFAA" />
-                  </View>
-                )}
-                <View style={{ position: "absolute", top: 10, left: 10 }}>
-                  <IconButton
-                    icon={ArrowLeft}
-                    label="Back to Circles"
-                    onPress={() => router.push("/circles")}
-                    size={19}
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 22,
-                      backgroundColor: "#FFFFFFF0",
-                    }}
-                  />
-                </View>
-                {isManager && (
-                  <Pressable
-                    testID="circle-cover-change"
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      circle.cover ? "Change cover photo" : "Add cover photo"
-                    }
-                    accessibilityHint="Choose a photo, then move and zoom it before saving"
-                    onFocus={() => setCoverFocused(true)}
-                    onBlur={() => setCoverFocused(false)}
-                    onPress={() => setCoverEditorOpen(true)}
-                    style={({ pressed }) => [
-                      s.coverEditIcon,
-                      {
-                        opacity: pressed ? 0.8 : 1,
-                        borderColor: coverFocused ? palette.teal : "#FFFFFF",
-                        borderWidth: coverFocused ? 3 : 1,
-                      },
-                    ]}
-                  >
-                    <Camera size={20} color={c.ink} />
-                  </Pressable>
-                )}
-              </View>
-              <View style={{ padding: width < 650 ? 16 : 20, gap: 12 }}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                {circle.name}
+              </T>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+              >
+                <Lock size={10} color={palette.muted} />
+                <T
+                  numberOfLines={1}
+                  style={{ fontSize: 10, color: palette.muted }}
                 >
-                  <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-                    <T
-                      numberOfLines={2}
-                      style={{
-                        fontSize: width < 650 ? 25 : 32,
-                        fontFamily: font.editorial,
-                        letterSpacing: -0.6,
-                      }}
-                    >
-                      {circle.name}
-                    </T>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 5,
-                      }}
-                    >
-                      <Lock size={11} color={palette.muted} />
-                      <T style={{ color: palette.muted, fontSize: 11 }}>
-                        Private
-                        {membership
-                          ? ` · ${members.length} ${members.length === 1 ? "member" : "members"}`
-                          : " Circle"}
-                      </T>
-                    </View>
-                  </View>
-                  {headerActions}
-                </View>
-                {!membership && (
-                  <Button
-                    icon={ownRequest ? Check : UserPlus}
-                    disabled={!!ownRequest || !circle.discoverable}
-                    onPress={joinCircle}
-                  >
-                    {ownRequest
-                      ? "Pending approval"
-                      : circle.discoverable
-                        ? circle.approvalRequired
-                          ? "Request to join"
-                          : "Join Circle"
-                        : "Invitation only"}
-                  </Button>
-                )}
+                  Private
+                  {membership
+                    ? ` · ${members.length} ${members.length === 1 ? "member" : "members"}`
+                    : " Circle"}
+                </T>
               </View>
-            </>
+            </View>
+            {headerActions}
+            {!!membership && width >= 1050 && (
+              <Button
+                icon={Plus}
+                style={{
+                  minHeight: 44,
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                }}
+                onPress={() =>
+                  router.push({ pathname: "/create", params: { circleId: id } })
+                }
+              >
+                Add memory
+              </Button>
+            )}
+          </View>
+          {!membership && (
+            <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+              <Button
+                icon={ownRequest ? Check : UserPlus}
+                disabled={!!ownRequest || !circle.discoverable}
+                onPress={joinCircle}
+              >
+                {ownRequest
+                  ? "Pending approval"
+                  : circle.discoverable
+                    ? circle.approvalRequired
+                      ? "Request to join"
+                      : "Join Circle"
+                    : "Invitation only"}
+              </Button>
+            </View>
           )}
           {membership && (
             <View
@@ -694,6 +657,33 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                   </Pressable>
                 );
               })}
+              {!surface && tab === "Feed" && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Filter memories"
+                  accessibilityHint={
+                    memoryMonth !== "all" || oldestFirst
+                      ? "Date or sort filters are active"
+                      : "Choose a month or change moment order"
+                  }
+                  accessibilityState={{ expanded: filtersOpen }}
+                  onPress={() => setFiltersOpen(true)}
+                  style={({ pressed }) => ({
+                    width: 44,
+                    minHeight: 48,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: pressed ? palette.mint : "transparent",
+                  })}
+                >
+                  <SlidersHorizontal size={18} color={palette.teal} />
+                  {(memoryMonth !== "all" || oldestFirst) && (
+                    <View
+                      style={[s.filterDot, { backgroundColor: palette.teal }]}
+                    />
+                  )}
+                </Pressable>
+              )}
             </View>
           )}
           {!!membership && !!secondarySection && (
@@ -800,166 +790,53 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
           )}
           {!surface && tab === "Feed" && (
             <View style={s.journal}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Add memory"
-                accessibilityHint="Share photos, a video, or a text memory with this Circle"
-                onPress={() =>
-                  router.push({ pathname: "/create", params: { circleId: id } })
-                }
-                style={({ pressed }) => ({
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: 16,
-                  borderRadius: 16,
-                  backgroundColor: palette.white,
-                  borderWidth: 1,
-                  borderColor: palette.line,
-                  opacity: pressed ? 0.8 : 1,
-                })}
-              >
+              {(memoryMonth !== "all" || oldestFirst) && (
                 <View
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 13,
-                    backgroundColor: palette.mint,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
+                  style={[s.activeFilters, { backgroundColor: palette.white }]}
                 >
-                  <Plus size={21} color={palette.teal} />
-                </View>
-                <View style={{ flex: 1, gap: 4 }}>
-                  <T style={{ fontFamily: font.bold, fontSize: 14 }}>
-                    Add memory
-                  </T>
-                  <T style={{ color: palette.muted, fontSize: 12 }}>
-                    Photos, videos, or a few words.
-                  </T>
-                </View>
-              </Pressable>
-              <View
-                style={[
-                  s.journalHeading,
-                  hasWallpaper && {
-                    backgroundColor: palette.white,
-                    padding: 16,
-                    borderRadius: 16,
-                  },
-                ]}
-              >
-                <View style={{ gap: 6 }}>
-                  <T style={{ fontFamily: font.heading, fontSize: 21 }}>
-                    Circle journal
-                  </T>
-                  <T style={{ fontSize: 12, color: palette.muted }}>
-                    Photos, stories, and the days between.
-                  </T>
-                </View>
-                {posts.length > 1 && (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Change moment order"
-                    onPress={() => setOldestFirst(!oldestFirst)}
-                    style={[
-                      s.sortButton,
-                      {
-                        borderColor: palette.line,
-                        backgroundColor: palette.white,
-                      },
-                    ]}
+                    accessibilityLabel="Edit memory filters"
+                    onPress={() => setFiltersOpen(true)}
+                    style={{ flex: 1, padding: 10 }}
                   >
-                    <ArrowDownUp size={14} color={palette.teal} />
-                    <T style={{ fontSize: 11, color: palette.ink }}>
-                      {oldestFirst ? "Oldest first" : "Newest first"}
+                    <T style={{ color: palette.muted, fontSize: 11 }}>
+                      {memoryMonth === "all"
+                        ? "All moments"
+                        : monthLabel(memoryMonth)}{" "}
+                      · {oldestFirst ? "Oldest first" : "Newest first"}
                     </T>
                   </Pressable>
-                )}
-              </View>
-              {posts.length > 0 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8, paddingBottom: 5 }}
-                  style={{ flexGrow: 0 }}
-                >
-                  {[
-                    { key: "all", label: "All moments" },
-                    ...memoryMonths.map((key) => ({
-                      key,
-                      label: monthLabel(key),
-                    })),
-                  ].map(({ key, label }) => (
-                    <Pressable
-                      key={key}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Show ${label.toLowerCase()}`}
-                      accessibilityState={{ selected: memoryMonth === key }}
-                      onPress={() => setMemoryMonth(key)}
-                      style={[
-                        s.monthChip,
-                        {
-                          backgroundColor:
-                            memoryMonth === key ? palette.ink : palette.white,
-                          borderColor:
-                            memoryMonth === key ? palette.ink : palette.line,
-                        },
-                      ]}
-                    >
-                      <T
-                        style={{
-                          fontSize: 11,
-                          color: memoryMonth === key ? "white" : palette.muted,
-                          fontFamily:
-                            memoryMonth === key ? font.bold : font.medium,
-                        }}
-                      >
-                        {label}
-                      </T>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              )}
-              {journal.map((post, index) => (
-                <View key={post.id}>
-                  {(index === 0 ||
-                    monthKey(post.createdAt) !==
-                      monthKey(journal[index - 1].createdAt)) && (
-                    <View
-                      style={[
-                        s.chapterHeading,
-                        hasWallpaper && {
-                          backgroundColor: palette.white,
-                          padding: 12,
-                          borderRadius: 12,
-                          marginBottom: 14,
-                        },
-                      ]}
-                    >
-                      <T
-                        style={{
-                          fontFamily: font.medium,
-                          color: palette.muted,
-                          fontSize: 11,
-                          letterSpacing: 0.4,
-                        }}
-                      >
-                        {monthLabel(monthKey(post.createdAt))}
-                      </T>
-                      <View
-                        style={{
-                          flex: 1,
-                          height: 1,
-                          backgroundColor: palette.line,
-                        }}
-                      />
-                    </View>
-                  )}
-                  <PostCard post={post} />
+                  <IconButton
+                    icon={X}
+                    label="Clear memory filters"
+                    onPress={() => {
+                      setMemoryMonth("all");
+                      setOldestFirst(false);
+                    }}
+                    style={{ width: 44, height: 44 }}
+                  />
                 </View>
+              )}
+              {journal.map((post) => (
+                <PostCard key={post.id} post={post} />
               ))}
+              {!!posts.length && !journal.length && (
+                <Empty
+                  title="No memories in this month"
+                  body="Try another month or clear the filters to see all moments."
+                >
+                  <Button
+                    secondary
+                    onPress={() => {
+                      setMemoryMonth("all");
+                      setOldestFirst(false);
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                </Empty>
+              )}
               {!!posts.length && (
                 <View
                   style={[
@@ -987,7 +864,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
               {!posts.length && (
                 <Empty
                   title="Your first chapter starts here."
-                  body="A favorite photo, a story from today, a simple hello. Choose Add memory above to start your Circle’s story."
+                  body="A favorite photo, a story from today, a simple hello. Use Add memory to start your Circle’s story."
                 />
               )}
             </View>
@@ -1876,7 +1753,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                     gap: 14,
                   }}
                 >
-                  <SectionTitle title="Cover photo" />
+                  <SectionTitle title="Circle photo" />
                   <T
                     style={{
                       color: palette.muted,
@@ -1884,16 +1761,16 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                       lineHeight: 20,
                     }}
                   >
-                    This is the header photo at the top of your Circle. You can
-                    also tap that photo to change it.
+                    Your Circle’s small picture appears beside its name. Tap it
+                    there or choose a new photo here.
                   </T>
                   {!!circle.cover && (
                     <StableImage
                       uri={circle.cover}
                       circleId={id}
-                      style={{ height: 120, width: "100%", borderRadius: 12 }}
+                      style={{ height: 64, width: 64, borderRadius: 32 }}
                       resizeMode="cover"
-                      accessibilityLabel="Current Circle cover photo"
+                      accessibilityLabel="Current Circle photo"
                     />
                   )}
                   <View style={{ alignItems: "flex-start" }}>
@@ -1901,7 +1778,9 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                       icon={Camera}
                       onPress={() => setCoverEditorOpen(true)}
                     >
-                      {circle.cover ? "Change cover photo" : "Add cover photo"}
+                      {circle.cover
+                        ? "Change Circle photo"
+                        : "Add Circle photo"}
                     </Button>
                   </View>
                 </Card>
@@ -1987,36 +1866,45 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   );
 }
 const s = StyleSheet.create({
-  journal: { maxWidth: 760, width: "100%", alignSelf: "center", gap: 18 },
-  journalHeading: {
+  header: { maxWidth: 760, width: "100%", alignSelf: "center" },
+  identityRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 14,
-    paddingTop: 5,
+    gap: 8,
+    padding: 12,
   },
-  sortButton: {
+  circlePhoto: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoEditBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterDot: {
+    position: "absolute",
+    top: 10,
+    right: 9,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  journal: { maxWidth: 760, width: "100%", alignSelf: "center", gap: 14 },
+  activeFilters: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderRadius: 10,
-  },
-  monthChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderRadius: 18,
-  },
-  chapterHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingBottom: 18,
-    paddingTop: 6,
+    borderRadius: 12,
+    overflow: "hidden",
   },
   journalFootnote: {
     flexDirection: "row",
@@ -2032,27 +1920,6 @@ const s = StyleSheet.create({
     gap: 13,
     paddingVertical: 18,
     paddingHorizontal: 15,
-  },
-  coverRing: {
-    position: "absolute",
-    width: 270,
-    height: 270,
-    borderRadius: 135,
-    borderWidth: 45,
-    borderColor: "#FFFFFF20",
-    right: -50,
-    bottom: -140,
-  },
-  coverEditIcon: {
-    position: "absolute",
-    right: 10,
-    bottom: 10,
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFFFFFF0",
-    borderRadius: 22,
   },
   aboutRow: {
     flexDirection: "row",
