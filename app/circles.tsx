@@ -1,11 +1,6 @@
+import { StableImage } from "../src/ui/StableImage";
 import React, { useState } from "react";
-import {
-  View,
-  Pressable,
-  Image,
-  useWindowDimensions,
-  StyleSheet,
-} from "react-native";
+import { View, Pressable, useWindowDimensions, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import {
   Plus,
@@ -208,8 +203,9 @@ export default function CirclesScreen() {
                   }}
                 >
                   {circle.cover ? (
-                    <Image
-                      source={{ uri: circle.cover }}
+                    <StableImage
+                      uri={circle.cover}
+                      circleId={circle.id}
                       style={{ width: "100%", height: "100%" }}
                     />
                   ) : (

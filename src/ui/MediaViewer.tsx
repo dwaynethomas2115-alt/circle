@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -23,6 +22,8 @@ import {
   X,
 } from "lucide-react-native";
 import { mediaFrameRatio } from "../lib/media";
+import { imageMediaIdentity } from "../lib/imageLoading";
+import { StableImage, useImageAccessScope } from "./StableImage";
 import {
   captureVideoPlayback,
   restoreVideoPlayback,
@@ -32,21 +33,35 @@ import {
 import { T } from "./primitives";
 import { colors as c, font } from "./theme";
 
-export function MediaImage({
-  uri,
-  label,
-  fullScreen = false,
-  onPress,
-  dimensions,
-  style,
-}: {
+type MediaImageProps = {
   uri: string;
   label: string;
   fullScreen?: boolean;
   onPress?: () => void;
   dimensions?: { width: number; height: number };
   style?: StyleProp<ViewStyle>;
-}) {
+  circleId?: string;
+};
+
+export function MediaImage(props: MediaImageProps) {
+  const scope = useImageAccessScope(props.circleId);
+  return (
+    <MountedMediaImage
+      key={`${scope}:${imageMediaIdentity(props.uri)}`}
+      {...props}
+    />
+  );
+}
+
+function MountedMediaImage({
+  uri,
+  label,
+  fullScreen = false,
+  onPress,
+  dimensions,
+  style,
+  circleId,
+}: MediaImageProps) {
   const [ratio, setRatio] = useState(
     mediaFrameRatio(dimensions?.width, dimensions?.height),
   );
@@ -55,23 +70,9 @@ export function MediaImage({
   );
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    let active = true;
-    setStatus("loading");
-    // React Native Web's load event does not consistently include source
-    // dimensions. Resolve the natural dimensions through the shared Image API.
-    Image.getSize(
-      uri,
-      (width, height) => {
-        if (active) setRatio(mediaFrameRatio(width, height));
-      },
-      () => {
-        /* The displayed Image handles its own error and retry UI. */
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [uri, attempt]);
+    if (dimensions?.width && dimensions?.height)
+      setRatio(mediaFrameRatio(dimensions.width, dimensions.height));
+  }, [dimensions?.width, dimensions?.height]);
   const frame = fullScreen ? { flex: 1 as const } : { aspectRatio: ratio };
   const retry = () => {
     setStatus("loading");
@@ -79,16 +80,23 @@ export function MediaImage({
   };
   const content = (
     <>
-      <Image
-        key={`${uri}:${attempt}`}
-        source={{ uri }}
+      <StableImage
+        key={attempt}
+        uri={uri}
+        circleId={circleId}
         accessibilityLabel={label}
         resizeMode="contain"
         style={[
           StyleSheet.absoluteFillObject,
           { opacity: status === "ready" ? 1 : 0 },
         ]}
+        onLoadStart={() => setStatus("loading")}
         onLoad={() => setStatus("ready")}
+        onDimensions={
+          dimensions?.width && dimensions?.height
+            ? undefined
+            : (size) => setRatio(mediaFrameRatio(size.width, size.height))
+        }
         onError={() => setStatus("error")}
       />
       {status === "loading" && (
@@ -131,17 +139,20 @@ export function MediaImage({
       )}
     </>
   );
-  return onPress && status !== "error" ? (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Open photo full screen"
-      onPress={onPress}
-      style={[styles.imageFrame, frame, style]}
-    >
+  // Keep the image's parent type fixed as album pages become active/inactive.
+  // Switching between Pressable and View remounted the actual image on swipe.
+  return (
+    <View style={[styles.imageFrame, frame, style]}>
       {content}
-    </Pressable>
-  ) : (
-    <View style={[styles.imageFrame, frame, style]}>{content}</View>
+      {onPress && status !== "error" && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open photo full screen"
+          onPress={onPress}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+    </View>
   );
 }
 
@@ -437,6 +448,11 @@ export function MediaViewer({
                     : caption || "Circle photo"
                 }
                 fullScreen
+                dimensions={
+                  item.width && item.height
+                    ? { width: item.width, height: item.height }
+                    : undefined
+                }
                 style={{
                   minHeight: height - 240 - insets.top - insets.bottom,
                   backgroundColor: "#10231D",
@@ -452,6 +468,11 @@ export function MediaViewer({
                   : caption || "Circle photo"
               }
               fullScreen
+              dimensions={
+                item.width && item.height
+                  ? { width: item.width, height: item.height }
+                  : undefined
+              }
               style={{ backgroundColor: "#10231D" }}
             />
           ))}

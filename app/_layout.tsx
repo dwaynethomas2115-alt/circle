@@ -23,20 +23,21 @@ export default function Layout() {
     Manrope_700Bold,
     Manrope_800ExtraBold,
   });
-  if (!fontsLoaded) return null;
   return (
     <SafeAreaProvider>
       <CircleProvider>
         <CircleFeaturesProvider>
-          <SafeAreaView
-            style={{ flex: 1, backgroundColor: "#fff" }}
-            edges={["top", "left", "right"]}
-          >
-            <StatusBar style="dark" />
-            <Navigator>
-              <Gate />
-            </Navigator>
-          </SafeAreaView>
+          {fontsLoaded && (
+            <SafeAreaView
+              style={{ flex: 1, backgroundColor: "#fff" }}
+              edges={["top", "left", "right"]}
+            >
+              <StatusBar style="dark" />
+              <Navigator>
+                <Gate />
+              </Navigator>
+            </SafeAreaView>
+          )}
         </CircleFeaturesProvider>
       </CircleProvider>
     </SafeAreaProvider>

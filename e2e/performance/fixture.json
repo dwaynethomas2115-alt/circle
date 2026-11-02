@@ -1,0 +1,74 @@
+{
+  "state": {
+    "version": 1,
+    "currentUserId": "alex",
+    "users": [
+      {
+        "id": "alex",
+        "name": "Test Admin",
+        "username": "test-admin",
+        "avatar": "",
+        "bio": "Synthetic smoke fixture.",
+        "email": "admin@example.test"
+      },
+      {
+        "id": "sarah",
+        "name": "Test Owner",
+        "username": "test-owner",
+        "avatar": "",
+        "bio": "Synthetic smoke fixture.",
+        "email": "owner@example.test"
+      }
+    ],
+    "circles": [
+      {
+        "id": "family",
+        "name": "Fixture Circle",
+        "description": "Synthetic browser smoke data.",
+        "category": "Family",
+        "avatar": "🌿",
+        "cover": "",
+        "color": "#DBECE5",
+        "discoverable": false,
+        "approvalRequired": true,
+        "ownerId": "sarah",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      }
+    ],
+    "members": [
+      {
+        "circleId": "family",
+        "userId": "alex",
+        "role": "admin",
+        "joinedAt": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "circleId": "family",
+        "userId": "sarah",
+        "role": "owner",
+        "joinedAt": "2026-01-01T00:00:00.000Z"
+      }
+    ],
+    "requests": [],
+    "invitations": [],
+    "posts": [],
+    "comments": [],
+    "messages": [],
+    "notifications": [],
+    "blocks": [],
+    "reports": [],
+    "theme": "light"
+  },
+  "theme": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "label": "Fixture forest",
+    "prompt": "Synthetic forest wallpaper.",
+    "accent": "#496B56",
+    "background": "#F5FAF6",
+    "surface": "#FCFEFC",
+    "ink": "#304938",
+    "motif": "garden",
+    "source": "preset",
+    "wallpaperPath": "family/22222222-2222-4222-8222-222222222222.jpg"
+  }
+}

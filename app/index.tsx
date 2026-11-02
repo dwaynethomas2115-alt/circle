@@ -1,8 +1,8 @@
+import { StableImage } from "../src/ui/StableImage";
 import React, { useState } from "react";
 import {
   View,
   Pressable,
-  Image,
   StyleSheet,
   useWindowDimensions,
   ScrollView,
@@ -145,7 +145,7 @@ export default function Home() {
                       ]}
                     >
                       {!!circle.cover && (
-                        <Image source={{ uri: circle.cover }} style={s.cover} />
+                        <StableImage uri={circle.cover} style={s.cover} />
                       )}
                       <View style={s.worldBadge}>
                         <CircleAvatar
@@ -343,7 +343,7 @@ export default function Home() {
                   >
                     <View style={s.photoMemoryImage}>
                       {first.type === "image" ? (
-                        <Image source={{ uri: first.uri }} style={s.cover} />
+                        <StableImage uri={first.uri} style={s.cover} />
                       ) : (
                         <View style={s.videoTile}>
                           <Play size={30} color={c.teal} />
@@ -443,7 +443,7 @@ export default function Home() {
                       }}
                     >
                       {!!circle.cover && (
-                        <Image source={{ uri: circle.cover }} style={s.cover} />
+                        <StableImage uri={circle.cover} style={s.cover} />
                       )}
                       <View
                         style={[

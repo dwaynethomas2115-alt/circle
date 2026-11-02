@@ -1,5 +1,6 @@
+import { StableImage } from "../ui/StableImage";
 import React from "react";
-import { View, Pressable, Image } from "react-native";
+import { View, Pressable } from "react-native";
 import { router } from "expo-router";
 import { Clapperboard, ArrowUpRight, CheckCheck } from "lucide-react-native";
 import { useCircle } from "../state/CircleProvider";
@@ -92,9 +93,9 @@ export function HomeHighlightsCard() {
       {photos.length > 0 && (
         <View style={{ flexDirection: "row", gap: 7, marginBottom: 22 }}>
           {photos.map((photo, index) => (
-            <Image
+            <StableImage
               key={`${photo.id}:${index}`}
-              source={{ uri: photo.uri }}
+              uri={photo.uri}
               accessibilityLabel="A recent Circle memory"
               style={{
                 flex: 1,

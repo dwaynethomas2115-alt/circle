@@ -1,5 +1,6 @@
+import { StableImage } from "../src/ui/StableImage";
 import React, { useState } from "react";
-import { View, Pressable, StyleSheet, Modal, Image } from "react-native";
+import { View, Pressable, StyleSheet, Modal } from "react-native";
 import { router } from "expo-router";
 import {
   Camera,
@@ -351,8 +352,8 @@ export default function Profile() {
                 circle.avatar.startsWith("file:") ||
                 circle.avatar.startsWith("data:") ||
                 circle.avatar.startsWith("/") ? (
-                  <Image
-                    source={{ uri: circle.avatar }}
+                  <StableImage
+                    uri={circle.avatar}
                     style={{ width: 42, height: 42, borderRadius: 13 }}
                   />
                 ) : (

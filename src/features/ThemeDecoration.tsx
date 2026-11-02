@@ -1,5 +1,6 @@
+import { StableImage } from "../ui/StableImage";
 import React, { useState } from "react";
-import { Image, View, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import {
   Leaf,
   Flower2,
@@ -52,9 +53,9 @@ export function ThemeDecoration({
       style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}
     >
       {hasImage && (
-        <Image
+        <StableImage
           testID="circle-wallpaper-pattern"
-          source={{ uri }}
+          uri={uri}
           resizeMode="repeat"
           style={StyleSheet.absoluteFill}
           onLoad={onLoad}

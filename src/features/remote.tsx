@@ -18,6 +18,7 @@ import {
   validateTheme,
 } from "./themes";
 import { ThemeGenerationError } from "./theme-errors";
+import { createScopedRefresh } from "../lib/scopedRefresh";
 
 export function useRemoteFeatures(): FeatureContextValue {
   const base = useCircle(),
@@ -26,30 +27,28 @@ export function useRemoteFeatures(): FeatureContextValue {
   const [raw, setRaw] = useState<FeatureState>(emptyFeatures);
   const [ready, setReady] = useState(false),
     [error, setError] = useState<string | null>(null);
-  const generation = useRef(0),
-    mounted = useRef(true),
-    loadedFor = useRef<string | null>(null);
-  const refresh = useCallback(async () => {
-    const actor =
-        current.current.authStatus === "unknown"
-          ? undefined
-          : current.current.user?.id,
-      token = ++generation.current;
-    if (!actor) {
-      setRaw(emptyFeatures());
-      loadedFor.current = null;
-      setReady(true);
-      return;
-    }
-    try {
-      const data = await invokeCircle<FeatureState>({ kind: "features" });
-      if (
-        mounted.current &&
-        generation.current === token &&
-        current.current.authStatus !== "unknown" &&
-        current.current.user?.id === actor
-      ) {
-        loadedFor.current = actor;
+  const loadedFor = useRef<string | null>(null);
+  const userId = base.user?.id;
+  const membershipKey = base.state.members
+    .filter((member) => member.userId === userId)
+    .map((member) => `${member.circleId}:${member.role}`)
+    .sort()
+    .join(",");
+  const accessScope =
+    base.authStatus !== "unknown" && userId
+      ? JSON.stringify([userId, membershipKey])
+      : null;
+  const scopeRef = useRef(accessScope);
+  scopeRef.current = accessScope;
+  const coordinator = useRef<ReturnType<
+    typeof createScopedRefresh<FeatureState>
+  > | null>(null);
+  if (!coordinator.current)
+    coordinator.current = createScopedRefresh({
+      scope: () => scopeRef.current,
+      load: () => invokeCircle<FeatureState>({ kind: "features" }),
+      accept: (data, scope) => {
+        loadedFor.current = scope;
         setRaw({
           ...data,
           themes: Object.fromEntries(
@@ -59,42 +58,58 @@ export function useRemoteFeatures(): FeatureContextValue {
           ),
         });
         setError(null);
-      }
-    } catch (cause) {
-      if (mounted.current && generation.current === token) {
+        setReady(true);
+      },
+      reject: (cause) => {
+        loadedFor.current = null;
         setRaw(emptyFeatures());
         setError(
           cause instanceof Error ? cause.message : "Features unavailable.",
         );
-      }
-    } finally {
-      if (mounted.current && generation.current === token) setReady(true);
-    }
-  }, []);
-  const userId = base.user?.id;
-  const membershipKey = base.state.members
-    .filter((member) => member.userId === userId)
-    .map((member) => `${member.circleId}:${member.role}`)
-    .sort()
-    .join(",");
+        setReady(true);
+      },
+      clear: () => {
+        loadedFor.current = null;
+        setRaw(emptyFeatures());
+        setError(null);
+        setReady(true);
+      },
+    });
+  const refresh = useCallback(
+    (fresh = false) => coordinator.current!.refresh(fresh),
+    [],
+  );
   useEffect(() => {
-    mounted.current = true;
+    coordinator.current!.setActive(true);
     void refresh();
     const timer = setInterval(() => {
-      void refresh();
+      const visible =
+        typeof document !== "undefined"
+          ? document.visibilityState === "visible"
+          : NativeAppState.currentState === "active";
+      if (visible) void refresh();
     }, 10_000);
-    const foreground = NativeAppState.addEventListener("change", (value) => {
-      if (value === "active") void refresh();
-    });
-    return () => {
-      mounted.current = false;
-      // Invalidate asynchronous requests; this ref is a counter, not a DOM node.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      ++generation.current;
-      clearInterval(timer);
-      foreground.remove();
+    // React Native Web already translates visibilitychange into AppState.
+    // Listen to one foreground source so one return starts one fresh read.
+    const foreground =
+      typeof document === "undefined"
+        ? NativeAppState.addEventListener("change", (value) => {
+            if (value === "active") void refresh(true);
+          })
+        : undefined;
+    const visible = () => {
+      if (document.visibilityState === "visible") void refresh(true);
     };
-  }, [userId, membershipKey, base.authStatus, refresh]);
+    if (typeof document !== "undefined")
+      document.addEventListener("visibilitychange", visible);
+    return () => {
+      coordinator.current!.setActive(false);
+      clearInterval(timer);
+      foreground?.remove();
+      if (typeof document !== "undefined")
+        document.removeEventListener("visibilitychange", visible);
+    };
+  }, [accessScope, refresh]);
   const dispatch = useCallback(
     async (action: FeatureAction): Promise<Result> => {
       const actor = current.current.user?.id;
@@ -112,10 +127,10 @@ export function useRemoteFeatures(): FeatureContextValue {
         const latest = current.current;
         if (latest.authStatus === "unknown" || latest.user?.id !== actor)
           return { ok: false, error: "Your session changed." };
-        await refresh();
+        await refresh(true);
         return result;
       } catch (cause) {
-        await refresh();
+        await refresh(true);
         return {
           ok: false,
           error:
@@ -195,7 +210,7 @@ export function useRemoteFeatures(): FeatureContextValue {
     [dispatch],
   );
   const safe =
-    base.authStatus !== "unknown" && loadedFor.current === userId
+    !!accessScope && loadedFor.current === accessScope
       ? visibleFeatures(raw, base.state)
       : emptyFeatures();
   return { ...safe, ready: ready && base.ready, error, actions };

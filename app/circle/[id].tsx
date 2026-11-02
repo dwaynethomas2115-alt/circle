@@ -1,7 +1,7 @@
+import { StableImage } from "../../src/ui/StableImage";
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
-  Image,
   Pressable,
   ScrollView,
   TextInput,
@@ -535,9 +535,10 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 }}
               >
                 {circle.cover ? (
-                  <Image
+                  <StableImage
                     testID="circle-cover-image"
-                    source={{ uri: circle.cover }}
+                    uri={circle.cover}
+                    circleId={id}
                     style={{ height: "100%", width: "100%" }}
                   />
                 ) : (
@@ -1887,8 +1888,9 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                     also tap that photo to change it.
                   </T>
                   {!!circle.cover && (
-                    <Image
-                      source={{ uri: circle.cover }}
+                    <StableImage
+                      uri={circle.cover}
+                      circleId={id}
                       style={{ height: 120, width: "100%", borderRadius: 12 }}
                       resizeMode="cover"
                       accessibilityLabel="Current Circle cover photo"

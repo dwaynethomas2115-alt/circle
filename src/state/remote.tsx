@@ -75,9 +75,12 @@ export function useRemoteCircle(): CircleContextValue {
       )
         void refresh();
     }, 10_000);
-    const foreground = NativeAppState.addEventListener("change", (value) => {
-      if (value === "active") void refreshFresh();
-    });
+    const foreground =
+      typeof document === "undefined"
+        ? NativeAppState.addEventListener("change", (value) => {
+            if (value === "active") void refreshFresh();
+          })
+        : undefined;
     const visible = () => {
       if (document.visibilityState === "visible") void refreshFresh();
     };
@@ -86,7 +89,7 @@ export function useRemoteCircle(): CircleContextValue {
     return () => {
       controller.current!.setActive(false);
       clearInterval(timer);
-      foreground.remove();
+      foreground?.remove();
       if (typeof document !== "undefined")
         document.removeEventListener("visibilitychange", visible);
     };

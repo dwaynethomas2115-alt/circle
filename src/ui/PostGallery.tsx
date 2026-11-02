@@ -13,14 +13,17 @@ import { getPostMedia } from "../lib/postMedia";
 import { mediaFrameRatio } from "../lib/media";
 import type { Post } from "../types";
 import { MediaImage, MediaViewer, Video } from "./MediaViewer";
+import { useMediaActivation } from "./useMediaActivation";
 import { T } from "./primitives";
 import { colors as c, font } from "./theme";
 
 /** One shared photo album keeps the feed, detail, and full-screen order alike. */
 export function PostGallery({ post, author }: { post: Post; author?: string }) {
   const media = getPostMedia(post);
+  const activation = useMediaActivation();
   const [width, setWidth] = useState(0);
   const [index, setIndex] = useState(0);
+  const [visitedPages, setVisitedPages] = useState(() => new Set([0, 1]));
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const scroller = useRef<ScrollView>(null);
   const count = media.length;
@@ -33,13 +36,26 @@ export function PostGallery({ post, author }: { post: Post; author?: string }) {
         x: activePage.current * width,
         animated: false,
       });
-  }, [width]);
+  }, [width, activation.active]);
+  useEffect(() => {
+    setVisitedPages((previous) => {
+      const next = [active - 1, active, active + 1].filter(
+        (page) => page >= 0 && page < count,
+      );
+      if (next.every((page) => previous.has(page))) return previous;
+      return new Set([...previous, ...next]);
+    });
+  }, [active, count]);
   if (!count) return null;
   const first = media[0];
   const frameHeight = width
     ? Math.min(
         660,
-        width / (count > 1 ? 1.12 : mediaFrameRatio(first.width, first.height)),
+        Math.max(
+          first.type === "image" && count === 1 ? 150 : 0,
+          width /
+            (count > 1 ? 1.12 : mediaFrameRatio(first.width, first.height)),
+        ),
       )
     : 330;
   const goTo = (next: number) => {
@@ -63,10 +79,13 @@ export function PostGallery({ post, author }: { post: Post; author?: string }) {
   return (
     <View style={s.album}>
       <View
+        ref={activation.ref}
         style={s.mount}
         onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       >
-        {first.type === "video" ? (
+        {!activation.active ? (
+          <View style={{ height: frameHeight }} />
+        ) : first.type === "video" ? (
           <Video
             uri={first.uri}
             label={post.content || "Circle video"}
@@ -75,6 +94,7 @@ export function PostGallery({ post, author }: { post: Post; author?: string }) {
         ) : count === 1 ? (
           <MediaImage
             uri={first.uri}
+            circleId={post.circleId}
             label={post.content || "Circle photo"}
             style={{ maxHeight: 660 }}
             dimensions={
@@ -107,9 +127,15 @@ export function PostGallery({ post, author }: { post: Post; author?: string }) {
                     page === active ? "auto" : "no-hide-descendants"
                   }
                 >
-                  {Math.abs(page - active) <= 1 && (
+                  {(visitedPages.has(page) || Math.abs(page - active) <= 1) && (
                     <MediaImage
                       uri={item.uri}
+                      circleId={post.circleId}
+                      dimensions={
+                        item.width && item.height
+                          ? { width: item.width, height: item.height }
+                          : undefined
+                      }
                       label={`${post.content || "Circle photo"} · Photo ${page + 1} of ${count}`}
                       onPress={
                         page === active ? () => setViewerIndex(page) : undefined

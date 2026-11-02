@@ -1942,6 +1942,35 @@ function hasThemeCompletion(store, identity, requestId, theme2) {
 
 // appwrite/function/media.ts
 import { Permission, Role } from "node-appwrite";
+
+// appwrite/function/concurrency.ts
+var MEDIA_CONCURRENCY = 6;
+async function mapConcurrent(values, limit, work) {
+  if (!Number.isInteger(limit) || limit < 1)
+    throw new Error("Concurrency must be a positive integer.");
+  const results = new Array(values.length);
+  let cursor = 0;
+  let failed = false;
+  let failure;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, async () => {
+      while (!failed) {
+        const index = cursor++;
+        if (index >= values.length) return;
+        try {
+          results[index] = await work(values[index], index);
+        } catch (cause) {
+          if (!failed) failure = cause;
+          failed = true;
+        }
+      }
+    })
+  );
+  if (failed) throw failure;
+  return results;
+}
+
+// appwrite/function/media.ts
 var BUCKET = "circle-media";
 var MAX_PHOTO_BYTES = 200 * 1024 * 1024;
 var MAX_FILE_BYTES = 250 * 1024 * 1024;
@@ -1974,32 +2003,44 @@ async function sealUpload(services, store, identity, fileId) {
     );
 }
 async function hydrateMedia(app, services, store, endpoint, project2) {
-  const next = structuredClone(app), urls = /* @__PURE__ */ new Map();
-  const sign = async (value) => {
-    if (!value?.startsWith("awfile:")) return value;
-    if (urls.has(value)) return urls.get(value);
+  const next = structuredClone(app);
+  const references = new Set(
+    [
+      ...next.users.map((user) => user.avatar),
+      ...next.circles.flatMap((circle2) => [circle2.avatar, circle2.cover]),
+      ...next.posts.flatMap(
+        (post) => getPostMedia(post).map((item) => item.uri)
+      )
+    ].filter((value) => Boolean(value?.startsWith("awfile:")))
+  );
+  for (const value of references) {
     const fileId = value.slice(7);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       fileId
     ) || !store.uploads?.[fileId]?.ready)
       throw new Error("A shared attachment is unavailable.");
-    const token = await services.tokens.createFileToken({
-      bucketId: BUCKET,
-      fileId,
-      expire: new Date(Date.now() + 6e4).toISOString()
-    });
-    const url = `${endpoint.replace(/\/$/, "")}/storage/buckets/${BUCKET}/files/${encodeURIComponent(fileId)}/view?${new URLSearchParams({ project: project2, token: token.secret })}`;
-    urls.set(value, url);
-    return url;
-  };
-  for (const user of next.users) user.avatar = await sign(user.avatar) || "";
+  }
+  const urls = new Map(
+    await mapConcurrent([...references], MEDIA_CONCURRENCY, async (value) => {
+      const fileId = value.slice(7);
+      const token = await services.tokens.createFileToken({
+        bucketId: BUCKET,
+        fileId,
+        expire: new Date(Date.now() + 6e4).toISOString()
+      });
+      const url = `${endpoint.replace(/\/$/, "")}/storage/buckets/${BUCKET}/files/${encodeURIComponent(fileId)}/view?${new URLSearchParams({ project: project2, token: token.secret })}`;
+      return [value, url];
+    })
+  );
+  const sign = (value) => value?.startsWith("awfile:") ? urls.get(value) : value;
+  for (const user of next.users) user.avatar = sign(user.avatar) || "";
   for (const circle2 of next.circles) {
-    circle2.avatar = await sign(circle2.avatar) || "";
-    circle2.cover = await sign(circle2.cover) || "";
+    circle2.avatar = sign(circle2.avatar) || "";
+    circle2.cover = sign(circle2.cover) || "";
   }
   for (const post of next.posts) {
     const attachments = getPostMedia(post);
-    for (const item of attachments) item.uri = await sign(item.uri) || "";
+    for (const item of attachments) item.uri = sign(item.uri) || "";
     if (post.attachments) post.attachments = attachments;
     post.media = attachments[0]?.uri;
   }
@@ -3041,7 +3082,7 @@ var Repository = class {
       await get("ai_quotas", identity.$id);
       await get("ai_proposals", identity.$id);
     }
-    const strings = reading ? [
+    const strings = snapshot ? [
       ...store.app.users.map((u) => u.avatar),
       ...store.app.circles.flatMap((c) => [c.avatar, c.cover]),
       ...store.app.posts.flatMap(
@@ -3051,10 +3092,16 @@ var Repository = class {
     const body = JSON.stringify(request);
     for (const match of body.matchAll(/awfile:([a-f0-9-]{36})/g))
       strings.push(match[0]);
-    for (const id3 of new Set(
-      strings.filter((s) => Boolean(s?.startsWith("awfile:"))).map((s) => s.slice(7))
-    ))
-      await get("uploads", id3);
+    const attachmentIds = [
+      ...new Set(
+        strings.filter((s) => Boolean(s?.startsWith("awfile:"))).map((s) => s.slice(7))
+      )
+    ];
+    await mapConcurrent(
+      attachmentIds,
+      MEDIA_CONCURRENCY,
+      (id3) => get("uploads", id3)
+    );
     store.uploads = Object.fromEntries(
       (rows.get("uploads") || []).map((r) => [r.entity_id, parse(r)])
     );

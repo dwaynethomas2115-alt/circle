@@ -2,6 +2,7 @@ import { Permission, Role, type Storage, type Tokens } from "node-appwrite";
 import type { AppState } from "../../src/types";
 import type { Identity, Store } from "./domain";
 import { getPostMedia } from "../../src/lib/postMedia";
+import { mapConcurrent, MEDIA_CONCURRENCY } from "./concurrency";
 export const BUCKET = "circle-media";
 export const MAX_PHOTO_BYTES = 200 * 1024 * 1024;
 export const MAX_FILE_BYTES = 250 * 1024 * 1024;
@@ -79,11 +80,18 @@ export async function hydrateMedia(
   endpoint: string,
   project: string,
 ) {
-  const next = structuredClone(app),
-    urls = new Map<string, string>();
-  const sign = async (value: string | undefined) => {
-    if (!value?.startsWith("awfile:")) return value;
-    if (urls.has(value)) return urls.get(value)!;
+  const next = structuredClone(app);
+  const references = new Set(
+    [
+      ...next.users.map((user) => user.avatar),
+      ...next.circles.flatMap((circle) => [circle.avatar, circle.cover]),
+      ...next.posts.flatMap((post) =>
+        getPostMedia(post).map((item) => item.uri),
+      ),
+    ].filter((value): value is string => Boolean(value?.startsWith("awfile:"))),
+  );
+  // Validate the whole authorized projection before starting any token requests.
+  for (const value of references) {
     const fileId = value.slice(7);
     if (
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -92,24 +100,31 @@ export async function hydrateMedia(
       !store.uploads?.[fileId]?.ready
     )
       throw new Error("A shared attachment is unavailable.");
-    const token = await services.tokens.createFileToken({
-      bucketId: BUCKET,
-      fileId,
-      expire: new Date(Date.now() + 60_000).toISOString(),
-    });
-    const url = `${endpoint.replace(/\/$/, "")}/storage/buckets/${BUCKET}/files/${encodeURIComponent(fileId)}/view?${new URLSearchParams({ project, token: token.secret })}`;
-    urls.set(value, url);
-    return url;
-  };
-  // Sequential signing prevents duplicate tokens for an attachment reused in the snapshot.
-  for (const user of next.users) user.avatar = (await sign(user.avatar)) || "";
+  }
+  // Unique references deduplicate reused attachments before bounded parallel I/O.
+  // The map is request-local: fresh authorization and 60-second tokens are unchanged.
+  const urls = new Map(
+    await mapConcurrent([...references], MEDIA_CONCURRENCY, async (value) => {
+      const fileId = value.slice(7);
+      const token = await services.tokens.createFileToken({
+        bucketId: BUCKET,
+        fileId,
+        expire: new Date(Date.now() + 60_000).toISOString(),
+      });
+      const url = `${endpoint.replace(/\/$/, "")}/storage/buckets/${BUCKET}/files/${encodeURIComponent(fileId)}/view?${new URLSearchParams({ project, token: token.secret })}`;
+      return [value, url] as const;
+    }),
+  );
+  const sign = (value: string | undefined) =>
+    value?.startsWith("awfile:") ? urls.get(value)! : value;
+  for (const user of next.users) user.avatar = sign(user.avatar) || "";
   for (const circle of next.circles) {
-    circle.avatar = (await sign(circle.avatar)) || "";
-    circle.cover = (await sign(circle.cover)) || "";
+    circle.avatar = sign(circle.avatar) || "";
+    circle.cover = sign(circle.cover) || "";
   }
   for (const post of next.posts) {
     const attachments = getPostMedia(post);
-    for (const item of attachments) item.uri = (await sign(item.uri)) || "";
+    for (const item of attachments) item.uri = sign(item.uri) || "";
     if (post.attachments) post.attachments = attachments;
     post.media = attachments[0]?.uri;
   }

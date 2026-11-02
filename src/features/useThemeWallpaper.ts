@@ -57,9 +57,12 @@ export function useThemeWallpaper(theme?: CircleTheme): {
     }
     let alive = true;
     let sequence = 0;
+    let refreshing = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setResolved({ scope, loading: true, error: null });
     const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
       const request = ++sequence;
       if (timer) clearTimeout(timer);
       try {
@@ -105,12 +108,17 @@ export function useThemeWallpaper(theme?: CircleTheme): {
           error: "The wallpaper could not be loaded. Please try again.",
         });
         timer = setTimeout(() => void refresh(), 15_000);
+      } finally {
+        refreshing = false;
       }
     };
     void refresh();
-    const foreground = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refresh();
-    });
+    const foreground =
+      typeof document === "undefined"
+        ? AppState.addEventListener("change", (state) => {
+            if (state === "active") void refresh();
+          })
+        : undefined;
     const visibility = () => {
       if (
         typeof document === "undefined" ||
@@ -124,7 +132,7 @@ export function useThemeWallpaper(theme?: CircleTheme): {
       alive = false;
       ++sequence;
       if (timer) clearTimeout(timer);
-      foreground.remove();
+      foreground?.remove();
       if (typeof document !== "undefined")
         document.removeEventListener("visibilitychange", visibility);
     };

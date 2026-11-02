@@ -9,6 +9,7 @@ import {
 } from "./domain";
 import type { CircleTheme } from "../../src/features/types";
 import { getPostMedia } from "../../src/lib/postMedia";
+import { mapConcurrent, MEDIA_CONCURRENCY } from "./concurrency";
 import {
   record,
   records,
@@ -360,7 +361,8 @@ export class Repository {
       await get("ai_quotas", identity.$id);
       await get("ai_proposals", identity.$id);
     }
-    const strings = reading
+    // Feature responses do not hydrate ordinary avatar/cover/attachment URLs.
+    const strings = snapshot
       ? [
           ...store.app.users.map((u) => u.avatar),
           ...store.app.circles.flatMap((c) => [c.avatar, c.cover]),
@@ -372,12 +374,16 @@ export class Repository {
     const body = JSON.stringify(request);
     for (const match of body.matchAll(/awfile:([a-f0-9-]{36})/g))
       strings.push(match[0]);
-    for (const id of new Set(
-      strings
-        .filter((s): s is string => Boolean(s?.startsWith("awfile:")))
-        .map((s) => s.slice(7)),
-    ))
-      await get("uploads", id);
+    const attachmentIds = [
+      ...new Set(
+        strings
+          .filter((s): s is string => Boolean(s?.startsWith("awfile:")))
+          .map((s) => s.slice(7)),
+      ),
+    ];
+    await mapConcurrent(attachmentIds, MEDIA_CONCURRENCY, (id) =>
+      get("uploads", id),
+    );
     store.uploads = Object.fromEntries(
       (rows.get("uploads") || []).map((r) => [r.entity_id, parse(r)]),
     ) as Store["uploads"];

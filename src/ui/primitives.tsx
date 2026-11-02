@@ -1,9 +1,9 @@
+import { StableImage } from "./StableImage";
 import React from "react";
 import {
   View,
   Text,
   Pressable,
-  Image,
   TextInput,
   StyleSheet,
   ActivityIndicator,
@@ -134,8 +134,8 @@ export function Avatar({
       }}
     >
       {uri ? (
-        <Image
-          source={{ uri }}
+        <StableImage
+          uri={uri}
           accessibilityLabel={name}
           style={{ width: size, height: size }}
         />
@@ -386,7 +386,7 @@ export function CircleAvatar({
       }}
     >
       {isPhoto ? (
-        <Image source={{ uri: avatar }} style={{ width: size, height: size }} />
+        <StableImage uri={avatar} style={{ width: size, height: size }} />
       ) : (
         <T style={{ fontSize: size * 0.55 }}>{avatar || "◉"}</T>
       )}

@@ -1,8 +1,8 @@
+import { StableImage } from "../ui/StableImage";
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Pressable,
-  Image,
   Modal,
   StyleSheet,
   Animated,
@@ -54,6 +54,9 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
     [saving, setSaving] = useState(false);
   const summary = buildCatchUp(state, features, circleId, cutoff);
   const circle = state.circles.find((x) => x.id === circleId);
+  const montageCover = summary.montage.find(
+    (post) => post.mediaType === "image" && post.media,
+  )?.media;
   if (!features.ready) return <Loading />;
   if (!summary.authorized)
     return (
@@ -205,14 +208,10 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
             overflow: "hidden",
           }}
         >
-          {summary.montage.find((p) => p.mediaType === "image" && p.media)
-            ?.media && (
-            <Image
-              source={{
-                uri: summary.montage.find(
-                  (p) => p.mediaType === "image" && p.media,
-                )?.media,
-              }}
+          {montageCover && (
+            <StableImage
+              uri={montageCover}
+              circleId={circleId}
               style={StyleSheet.absoluteFillObject}
             />
           )}
@@ -328,8 +327,8 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
                     </T>
                   </View>
                   {post.mediaType === "image" && post.media ? (
-                    <Image
-                      source={{ uri: post.media }}
+                    <StableImage
+                      uri={post.media}
                       style={{ width: 52, height: 52, borderRadius: 10 }}
                     />
                   ) : (
@@ -606,8 +605,8 @@ function Montage({
                 </T>
               </View>
             ) : (
-              <Image
-                source={{ uri: media.uri }}
+              <StableImage
+                uri={media.uri}
                 style={{ width: "100%", height: "100%" }}
                 resizeMode="contain"
                 accessibilityLabel={post.content || "A shared Circle photo"}
