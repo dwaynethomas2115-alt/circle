@@ -129,6 +129,7 @@ function useDemoFeatures(): FeatureContextValue {
   }, [existence, ready]);
   const actions = useMemo<FeatureActions>(
     () => ({
+      refresh: async () => {},
       createPoll: (circleId, question, options, closesAt) =>
         dispatch({ type: "createPoll", circleId, question, options, closesAt }),
       vote: (pollId, optionId) => dispatch({ type: "vote", pollId, optionId }),

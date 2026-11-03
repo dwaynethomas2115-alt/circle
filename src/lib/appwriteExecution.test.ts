@@ -503,3 +503,119 @@ test("failed and malformed synchronous executions do not become empty successful
     );
   }
 });
+
+test("calendar async dispatch polls after not-yet-created claim and ignores async response bodies", async () => {
+  const calls: any[] = [];
+  let reads = 0,
+    time = 0;
+  const service = {
+    createExecution: async (args: any) => {
+      const body = JSON.parse(args.body);
+      calls.push({ ...args, body });
+      const result = (data: unknown, status = 200) => ({
+        $id: "calendar-exec",
+        status: "completed",
+        responseStatusCode: status,
+        responseBody: JSON.stringify(
+          status >= 400 ? { error: data } : { data },
+        ),
+      });
+      if (body.kind === "calendarCapabilities")
+        return result({ model: "gpt-6-luna" });
+      if (body.kind === "analyzeCalendar")
+        return { ...result(undefined), responseBody: "" };
+      reads++;
+      if (reads === 1)
+        return result(
+          "Calendar import not found. Retry the same analysis request.",
+          400,
+        );
+      return result(
+        reads === 2
+          ? { status: "processing" }
+          : { status: "ready", proposal: { events: [], warnings: [] } },
+      );
+    },
+    getExecution: async () => {
+      throw new Error("Async execution body is not a result source");
+    },
+  };
+  const result = await runCircleExecution<any>(service, {
+    functionId: "circle-api",
+    body: {
+      kind: "analyzeCalendar",
+      circleId: "family",
+      requestId: "stable-id",
+      input: { text: "Dinner", timezone: "UTC" },
+    },
+    now: () => time,
+    pause: async (ms) => {
+      time += ms;
+    },
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(
+    calls.filter((c) => c.body.kind === "analyzeCalendar").length,
+    1,
+  );
+  assert.equal(
+    calls.find((c) => c.body.kind === "analyzeCalendar").async,
+    true,
+  );
+});
+test("calendar rejects wrong model before dispatch", async () => {
+  let calls = 0;
+  const service = {
+    createExecution: async () => {
+      calls++;
+      return {
+        $id: "x",
+        status: "completed",
+        responseStatusCode: 200,
+        responseBody: JSON.stringify({ data: { model: "other" } }),
+      };
+    },
+    getExecution: async () => {
+      throw new Error();
+    },
+  };
+  await assert.rejects(
+    runCircleExecution(service, {
+      functionId: "circle-api",
+      body: { kind: "analyzeCalendar", circleId: "family", requestId: "same" },
+    }),
+    /gpt-6-luna/,
+  );
+  assert.equal(calls, 1);
+});
+test("calendar lost dispatch response reads saved result without dispatch retry", async () => {
+  let dispatches = 0;
+  const service = {
+    createExecution: async (args: any) => {
+      const body = JSON.parse(args.body);
+      if (body.kind === "analyzeCalendar") {
+        dispatches++;
+        throw new Error("lost response");
+      }
+      return {
+        $id: "x",
+        status: "completed",
+        responseStatusCode: 200,
+        responseBody: JSON.stringify({
+          data:
+            body.kind === "calendarCapabilities"
+              ? { model: "gpt-6-luna" }
+              : { status: "ready", proposal: { events: [], warnings: [] } },
+        }),
+      };
+    },
+    getExecution: async () => {
+      throw new Error();
+    },
+  };
+  await runCircleExecution(service, {
+    functionId: "circle-api",
+    body: { kind: "analyzeCalendar", circleId: "family", requestId: "same" },
+  });
+  assert.equal(dispatches, 1);
+});

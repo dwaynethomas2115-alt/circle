@@ -1,3 +1,4 @@
+import { CalendarAI } from "./CalendarAI";
 import React, { useEffect, useState } from "react";
 import { View, Pressable, useWindowDimensions } from "react-native";
 import {
@@ -204,6 +205,14 @@ export function CalendarPanel({ circleId }: { circleId: string }) {
     <View
       style={{ gap: 22, maxWidth: 950, width: "100%", alignSelf: "center" }}
     >
+      <CalendarAI
+        key={`${user?.id}:${circleId}`}
+        circleId={circleId}
+        onSaved={() => {
+          setNotice("Calendar import saved. Refreshing events…");
+          void actions.refresh();
+        }}
+      />
       <View
         style={{
           flexDirection: "row",

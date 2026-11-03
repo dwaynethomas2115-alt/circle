@@ -110,6 +110,75 @@ export async function runCircleExecution<T>(
   service: ExecutionService,
   options: ExecutionOptions,
 ): Promise<T> {
+  const calendar = options.body as {
+    kind?: string;
+    circleId?: string;
+    requestId?: string;
+  } | null;
+  if (calendar?.kind === "analyzeCalendar") {
+    const capabilities = parseExecution<{ model?: string }>(
+      await service.createExecution({
+        functionId: options.functionId,
+        body: JSON.stringify({
+          kind: "calendarCapabilities",
+          circleId: calendar.circleId,
+        }),
+        async: false,
+      }),
+    );
+    if (capabilities.model !== "gpt-6-luna")
+      throw new Error("The calendar server must be configured for gpt-6-luna.");
+    // Dispatch asynchronously; retries use the same durable server claim.
+    try {
+      await service.createExecution({
+        functionId: options.functionId,
+        body: JSON.stringify(options.body),
+        async: true,
+      });
+    } catch {
+      /* Dispatch may have succeeded; query its durable result. */
+    }
+    const now = options.now || Date.now;
+    const pause =
+      options.pause ||
+      ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const deadline = now() + (options.timeoutMs ?? 120000);
+    while (now() < deadline) {
+      let result: { status: string; error?: string };
+      try {
+        result = parseExecution(
+          await service.createExecution({
+            functionId: options.functionId,
+            body: JSON.stringify({
+              kind: "calendarResult",
+              circleId: calendar.circleId,
+              requestId: calendar.requestId,
+            }),
+            async: false,
+          }),
+        );
+      } catch (cause) {
+        if (
+          cause instanceof Error &&
+          cause.message.includes("Calendar import not found")
+        ) {
+          await pause(1500);
+          continue;
+        }
+        throw cause;
+      }
+      if (result.status === "failed")
+        throw new Error(result.error || "Calendar analysis failed.");
+      if (result.status === "ready" || result.status === "saved")
+        return result as T;
+      if (result.status !== "processing")
+        throw new Error("The calendar server needs updating.");
+      await pause(1500);
+    }
+    throw new Error(
+      "Analysis is still pending. Retry the unchanged source to check the same request without another charge.",
+    );
+  }
   if (!options.themeJobKey) {
     // Ordinary requests are synchronous: their response body is available.
     return parseExecution<T>(

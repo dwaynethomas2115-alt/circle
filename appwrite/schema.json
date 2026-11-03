@@ -1304,6 +1304,50 @@
           "type": "key"
         }
       ]
+    },
+    {
+      "id": "calendar_imports",
+      "rowSecurity": true,
+      "permissions": [],
+      "columns": [
+        {
+          "key": "entity_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "scope_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "actor_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "related_id",
+          "type": "string",
+          "size": 128,
+          "required": true
+        },
+        {
+          "key": "sort_at",
+          "type": "string",
+          "size": 32,
+          "required": true
+        },
+        {
+          "key": "data",
+          "type": "string",
+          "size": 32768,
+          "required": true
+        }
+      ],
+      "indexes": []
     }
   ],
   "bucket": {

@@ -142,6 +142,9 @@ export function useRemoteFeatures(): FeatureContextValue {
   );
   const actions = useMemo<FeatureActions>(
     () => ({
+      refresh: async () => {
+        await refresh(true);
+      },
       createPoll: (circleId, question, options, closesAt) =>
         dispatch({ type: "createPoll", circleId, question, options, closesAt }),
       vote: (pollId, optionId) => dispatch({ type: "vote", pollId, optionId }),
@@ -207,7 +210,7 @@ export function useRemoteFeatures(): FeatureContextValue {
         }
       },
     }),
-    [dispatch],
+    [dispatch, refresh],
   );
   const safe =
     !!accessScope && loadedFor.current === accessScope

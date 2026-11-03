@@ -1,3 +1,8 @@
+import { calendarMember, calendarCommand, type CalendarJob } from "./calendar";
+import {
+  CALENDAR_MODEL,
+  type CalendarResult,
+} from "../../src/features/calendar-ai";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type { AppState, Result } from "../../src/types";
 import type { FeatureState, CircleTheme } from "../../src/features/types";
@@ -58,6 +63,7 @@ export type ThemeJobResult =
   | { status: "completed"; theme: CircleTheme }
   | ({ status: "failed" } & ThemeFailure);
 export interface Store {
+  calendarJobs?: Record<string, CalendarJob>;
   generations?: Record<string, number[] | ThemeQuota>;
   proposals?: Record<
     string,
@@ -156,7 +162,9 @@ export function execute(
     | Result
     | ThemeJobResult
     | { requestId: string }
-    | PostMediaCapabilities;
+    | PostMediaCapabilities
+    | CalendarResult
+    | { model: string };
 } {
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success)
@@ -179,6 +187,16 @@ export function execute(
     app,
     features: structuredClone(store.features),
   };
+  if (request.kind === "calendarCapabilities") {
+    calendarMember(next, identity, request.circleId);
+    return { store: next, data: { model: CALENDAR_MODEL } };
+  }
+  if (
+    request.kind === "analyzeCalendar" ||
+    request.kind === "calendarResult" ||
+    request.kind === "saveCalendar"
+  )
+    return calendarCommand(next, identity, request);
   if (request.kind === "mediaCapabilities") {
     if (
       !app.members.some(

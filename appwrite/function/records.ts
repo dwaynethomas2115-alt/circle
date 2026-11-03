@@ -232,6 +232,18 @@ export function records(store: Store): Map<string, Entity> {
         new Date(u.createdAt).toISOString(),
       ),
     );
+  for (const [id, job] of Object.entries(store.calendarJobs || {}))
+    put(
+      record(
+        "calendar_imports",
+        id,
+        job,
+        job.circleId,
+        job.owner,
+        "",
+        new Date(job.createdAt).toISOString(),
+      ),
+    );
   for (const [uid, times] of Object.entries(store.generations || {}))
     put(record("ai_quotas", uid, times, "", uid));
   for (const [uid, p] of Object.entries(store.proposals || {}))

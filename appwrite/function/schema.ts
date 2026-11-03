@@ -1,3 +1,7 @@
+import {
+  calendarInputSchema,
+  calendarEventSchema,
+} from "../../src/features/calendar-ai";
 import { z } from "zod";
 import { wallpaperCircleId } from "../../src/features/themes";
 import { MAX_POST_PHOTOS, validatePostMedia } from "../../src/lib/postMedia";
@@ -163,6 +167,34 @@ export const featureSchema = z.union([
   action("saveTheme", { circleId: id, theme }),
 ]);
 export const requestSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("calendarCapabilities"), circleId: id }).strict(),
+  z
+    .object({
+      kind: z.literal("analyzeCalendar"),
+      circleId: id,
+      requestId: z.uuid(),
+      input: calendarInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("calendarResult"),
+      circleId: id,
+      requestId: z.uuid(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("saveCalendar"),
+      circleId: id,
+      requestId: z.uuid(),
+      confirmed: z.literal(true),
+      events: z
+        .array(calendarEventSchema.extend({ reviewed: z.literal(true) }))
+        .min(1)
+        .max(20),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("beginUpload"),

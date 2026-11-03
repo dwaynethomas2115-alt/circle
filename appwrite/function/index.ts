@@ -1,3 +1,5 @@
+import { extractCalendar, finishCalendar } from "./calendar";
+import type { CalendarResult } from "../../src/features/calendar-ai";
 import { Account, Client, TablesDB, Storage, Tokens } from "node-appwrite";
 import {
   execute,
@@ -29,6 +31,7 @@ export interface Dependencies {
   media?: MediaServices;
   wallpaper?: WallpaperServices;
   generateWallpaper?: typeof generateTheme;
+  extractCalendar?: typeof extractCalendar;
   db: Database;
 }
 export default async function main(
@@ -71,7 +74,14 @@ export default async function main(
     tokens: new Tokens(client().setKey(key)),
   };
   try {
-    if (Buffer.byteLength(JSON.stringify(req.bodyJson) || "") > 24000)
+    const calendarKind = (req.bodyJson as { kind?: string } | null)?.kind;
+    const bodyLimit =
+      calendarKind === "analyzeCalendar"
+        ? 290000
+        : calendarKind === "saveCalendar"
+          ? 30000
+          : 24000;
+    if (Buffer.byteLength(JSON.stringify(req.bodyJson) || "") > bodyLimit)
       return res.json({ error: "Request is too large." }, 413);
     const parsed = requestSchema.safeParse(req.bodyJson);
     if (!parsed.success)
@@ -79,6 +89,81 @@ export default async function main(
         "Invalid Circle request. Please check the fields and attachment format.",
       );
     const request = parsed.data;
+    if (request.kind === "calendarCapabilities") {
+      const result = await repository.read(identity, request);
+      if (!process.env.OPENAI_API_KEY)
+        return res.json(
+          {
+            error:
+              "Calendar AI needs the existing server-side OpenAI key configured.",
+          },
+          503,
+        );
+      return res.json({ data: result.data });
+    }
+    if (request.kind === "calendarResult")
+      return res.json({
+        data: (await repository.read(identity, request)).data,
+      });
+    if (request.kind === "analyzeCalendar") {
+      if (!process.env.OPENAI_API_KEY)
+        return res.json(
+          {
+            error:
+              "Calendar AI needs the existing server-side OpenAI key configured.",
+          },
+          503,
+        );
+      const claimed = await repository.mutate(
+        identity,
+        request,
+        async (store) => execute(store, identity, request),
+      );
+      if (!(claimed.data as CalendarResult & { claimed?: boolean }).claimed)
+        return res.json({ data: claimed.data });
+      let proposal;
+      try {
+        proposal = await (injected?.extractCalendar || extractCalendar)(
+          request.input,
+          process.env.OPENAI_API_KEY,
+        );
+      } catch (cause) {
+        const safeError =
+          cause instanceof Error &&
+          /^(Luna |Calendar AI |The analysis image|Choose a supported image)/.test(
+            cause.message,
+          )
+            ? cause.message
+            : "Calendar analysis failed. Start a new analysis to retry. No events were saved.";
+        const failed = await repository.mutate(
+          identity,
+          request,
+          async (store) =>
+            finishCalendar(
+              store,
+              identity,
+              request.circleId,
+              request.requestId,
+              undefined,
+              safeError,
+            ),
+        );
+        return res.json({ data: failed.data });
+      }
+      const completed = await repository.mutate(
+        identity,
+        request,
+        async (store) =>
+          finishCalendar(
+            store,
+            identity,
+            request.circleId,
+            request.requestId,
+            proposal,
+          ),
+      );
+      return res.json({ data: completed.data });
+    }
     if (request.kind === "prepareTheme" && !process.env.OPENAI_API_KEY)
       throw new ThemeError(
         "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",

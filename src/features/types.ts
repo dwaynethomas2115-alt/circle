@@ -75,6 +75,7 @@ export interface ThemeResult extends Result {
   resetAt?: string;
 }
 export interface FeatureActions {
+  refresh(): Promise<void>;
   createPoll(
     circleId: string,
     question: string,
