@@ -129,6 +129,15 @@ function useDemoFeatures(): FeatureContextValue {
   }, [existence, ready]);
   const actions = useMemo<FeatureActions>(
     () => ({
+      analyzeCalendar: async () => {
+        throw new Error(
+          "Calendar AI needs your connected Circle server and an approved model. Local Demo does not contact OpenAI.",
+        );
+      },
+      importCalendar: async () => ({
+        ok: false,
+        error: "Connect your Circle server to save reviewed calendar imports.",
+      }),
       createPoll: (circleId, question, options, closesAt) =>
         dispatch({ type: "createPoll", circleId, question, options, closesAt }),
       vote: (pollId, optionId) => dispatch({ type: "vote", pollId, optionId }),

@@ -162,7 +162,64 @@ export const featureSchema = z.union([
   action("markCaughtUp", { circleId: id, seenAt: text(40) }),
   action("saveTheme", { circleId: id, theme }),
 ]);
+const calendarSource = z.discriminatedUnion("kind", [
+  z
+    .object({ kind: z.literal("text"), name: text(120), text: text(12000) })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("image"),
+      name: text(120),
+      dataUrl: text(163900),
+    })
+    .strict(),
+]);
+const calendarImportEvent = z
+  .object({
+    title: text(120).min(3),
+    description: text(2000),
+    location: text(200),
+    startsAt: text(40).regex(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/,
+    ),
+    endsAt: text(40).regex(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/,
+    ),
+  })
+  .strict();
 export const requestSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("calendarAssistant"),
+      circleId: id,
+      message: text(4000),
+      history: z
+        .array(
+          z
+            .object({
+              role: z.enum(["user", "assistant"]),
+              content: text(2000),
+            })
+            .strict(),
+        )
+        .max(6),
+      source: calendarSource.optional(),
+      referenceDate: text(10).regex(/^\d{4}-\d{2}-\d{2}$/),
+      timeZone: text(100).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("importCalendar"),
+      input: z
+        .object({
+          circleId: id,
+          confirmed: z.literal(true),
+          events: z.array(calendarImportEvent).min(1).max(20),
+        })
+        .strict(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("beginUpload"),

@@ -8,6 +8,7 @@ import {
   Clock3,
   MapPin,
   Plus,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react-native";
@@ -28,6 +29,7 @@ import { colors as baseColors, font } from "../ui/theme";
 import { useCircleTheme, themeTint } from "./theme-context";
 import type { Result } from "../types";
 import type { EventRSVP } from "./types";
+import { CalendarAssistant } from "./CalendarAssistantPanel";
 
 const pad = (value: number) => String(value).padStart(2, "0");
 const dateKey = (date: Date) =>
@@ -80,6 +82,7 @@ export function CalendarPanel({ circleId }: { circleId: string }) {
   );
   const [selected, setSelected] = useState<string | null>(null);
   const [composer, setComposer] = useState(false);
+  const [assistant, setAssistant] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
@@ -237,14 +240,29 @@ export function CalendarPanel({ circleId }: { circleId: string }) {
             A shared calendar for the moments worth showing up for.
           </T>
         </View>
-        <Button
-          icon={composer ? X : Plus}
-          secondary={composer}
-          onPress={() => (composer ? setComposer(false) : openComposer())}
-        >
-          {composer ? "Cancel" : "Create an event"}
-        </Button>
+        <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            icon={Sparkles}
+            secondary
+            onPress={() => setAssistant(!assistant)}
+          >
+            Calendar AI
+          </Button>
+          <Button
+            icon={composer ? X : Plus}
+            secondary={composer}
+            onPress={() => (composer ? setComposer(false) : openComposer())}
+          >
+            {composer ? "Cancel" : "Create an event"}
+          </Button>
+        </View>
       </View>
+      {assistant && (
+        <CalendarAssistant
+          circleId={circleId}
+          onClose={() => setAssistant(false)}
+        />
+      )}
       {notice ? <Banner text={notice} onDismiss={() => setNotice("")} /> : null}
       {error && <Banner text={error} />}
       {composer && (

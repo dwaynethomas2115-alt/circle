@@ -1,3 +1,9 @@
+import type {
+  CalendarAnalysisInput,
+  CalendarAnalysisResult,
+  CalendarImportInput,
+  CalendarImportResult,
+} from "./calendarAssistant";
 import type { Result } from "../types";
 export interface PollOption {
   id: string;
@@ -75,6 +81,10 @@ export interface ThemeResult extends Result {
   resetAt?: string;
 }
 export interface FeatureActions {
+  analyzeCalendar(
+    input: CalendarAnalysisInput,
+  ): Promise<CalendarAnalysisResult>;
+  importCalendar(input: CalendarImportInput): Promise<CalendarImportResult>;
   createPoll(
     circleId: string,
     question: string,

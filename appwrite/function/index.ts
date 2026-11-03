@@ -10,6 +10,12 @@ import {
 import { hydrateMedia, sealUpload, type MediaServices } from "./media";
 import { requestSchema } from "./schema";
 import { generateTheme, AIError } from "./ai";
+import { analyzeCalendar, CalendarAIError } from "./calendar-ai";
+import {
+  CALENDAR_LIMITS,
+  validateCalendarAnalysisInput,
+  validateCalendarAnalysisResult,
+} from "../../src/features/calendarAssistant";
 import {
   storeWallpaper,
   signWallpaper,
@@ -29,8 +35,11 @@ export interface Dependencies {
   media?: MediaServices;
   wallpaper?: WallpaperServices;
   generateWallpaper?: typeof generateTheme;
+  analyzeCalendar?: typeof analyzeCalendar;
   db: Database;
 }
+// A process-local overlapping-request guard, not a durable quota or billing cap.
+const activeCalendarRequests = new Set<string>();
 export default async function main(
   { req, res, error }: Context,
   injected?: Dependencies,
@@ -71,7 +80,14 @@ export default async function main(
     tokens: new Tokens(client().setKey(key)),
   };
   try {
-    if (Buffer.byteLength(JSON.stringify(req.bodyJson) || "") > 24000)
+    const isCalendarAnalysis =
+      req.bodyJson &&
+      typeof req.bodyJson === "object" &&
+      (req.bodyJson as { kind?: unknown }).kind === "calendarAssistant";
+    if (
+      Buffer.byteLength(JSON.stringify(req.bodyJson) || "") >
+      (isCalendarAnalysis ? CALENDAR_LIMITS.maxRequestBytes : 24000)
+    )
       return res.json({ error: "Request is too large." }, 413);
     const parsed = requestSchema.safeParse(req.bodyJson);
     if (!parsed.success)
@@ -79,6 +95,51 @@ export default async function main(
         "Invalid Circle request. Please check the fields and attachment format.",
       );
     const request = parsed.data;
+    if (request.kind === "calendarAssistant") {
+      // Membership comes before model configuration or provider work. Recheck it
+      // after inference too: a removed member receives no late proposals.
+      await repository.read(identity, request);
+      const { kind: _kind, ...input } = request;
+      const problem = validateCalendarAnalysisInput(input);
+      if (problem) throw new CalendarAIError(problem);
+      const model = process.env.OPENAI_CALENDAR_MODEL;
+      if (!model?.trim())
+        throw new CalendarAIError(
+          "Calendar AI is not enabled. The app owner must approve and configure its model first.",
+          503,
+          "calendar_ai_disabled",
+        );
+      const scope = JSON.stringify([
+        endpoint,
+        project,
+        databaseId,
+        identity.$id,
+      ]);
+      if (activeCalendarRequests.has(scope))
+        throw new CalendarAIError(
+          "Your calendar analysis is still running. Wait for it before sending another message.",
+          429,
+          "calendar_analysis_in_progress",
+        );
+      activeCalendarRequests.add(scope);
+      try {
+        const proposals = await (injected?.analyzeCalendar ?? analyzeCalendar)(
+          input,
+          process.env.OPENAI_API_KEY || "",
+          model,
+        );
+        if (!validateCalendarAnalysisResult(proposals))
+          throw new CalendarAIError(
+            "Calendar analysis returned invalid proposals. Nothing was added.",
+            502,
+            "calendar_provider_response",
+          );
+        await repository.read(identity, request);
+        return res.json({ data: proposals });
+      } finally {
+        activeCalendarRequests.delete(scope);
+      }
+    }
     if (request.kind === "prepareTheme" && !process.env.OPENAI_API_KEY)
       throw new ThemeError(
         "AI wallpapers need a server-side OpenAI API key. Ask the app owner to connect OpenAI.",
@@ -278,6 +339,8 @@ export default async function main(
         }),
       );
     }
+    if (cause instanceof CalendarAIError)
+      return res.json({ error: cause.message, code: cause.code }, cause.status);
     if (cause instanceof ThemeError || cause instanceof AIError)
       return res.json(
         {

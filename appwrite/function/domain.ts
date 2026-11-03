@@ -1,4 +1,9 @@
 import { randomBytes, createHash, randomUUID } from "node:crypto";
+import { CalendarAIError, calendarImportId } from "./calendar-ai";
+import {
+  canonicalCalendarEvent,
+  type CalendarImportResult,
+} from "../../src/features/calendarAssistant";
 import type { AppState, Result } from "../../src/types";
 import type { FeatureState, CircleTheme } from "../../src/features/types";
 import { emptyCircle } from "../../src/state/empty";
@@ -156,7 +161,8 @@ export function execute(
     | Result
     | ThemeJobResult
     | { requestId: string }
-    | PostMediaCapabilities;
+    | PostMediaCapabilities
+    | CalendarImportResult;
 } {
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success)
@@ -179,6 +185,90 @@ export function execute(
     app,
     features: structuredClone(store.features),
   };
+  if (
+    request.kind === "calendarAssistant" ||
+    request.kind === "importCalendar"
+  ) {
+    const circleId =
+      request.kind === "calendarAssistant"
+        ? request.circleId
+        : request.input.circleId;
+    if (
+      !app.circles.some((circle) => circle.id === circleId) ||
+      !app.members.some(
+        (member) =>
+          member.circleId === circleId && member.userId === identity.$id,
+      )
+    )
+      throw new CalendarAIError(
+        "Join this Circle before using its calendar assistant.",
+        403,
+        "calendar_membership_required",
+      );
+    if (request.kind === "calendarAssistant")
+      return { store: next, data: { ok: true } };
+    const now = Date.now();
+    // Validate the full reviewed batch before changing any event. Never save partial imports.
+    const events = request.input.events.map((event) => {
+      const start = new Date(event.startsAt),
+        end = new Date(event.endsAt);
+      const title = event.title.trim(),
+        description = event.description.trim(),
+        location = event.location.trim();
+      if (
+        title.length < 3 ||
+        title.length > 120 ||
+        description.length > 2000 ||
+        location.length > 200 ||
+        !Number.isFinite(start.getTime()) ||
+        !Number.isFinite(end.getTime()) ||
+        start.getTime() <= now ||
+        end.getTime() <= start.getTime() ||
+        start.toISOString().slice(0, 10) !== event.startsAt.slice(0, 10) ||
+        end.toISOString().slice(0, 10) !== event.endsAt.slice(0, 10)
+      )
+        throw new CalendarAIError(
+          "Review every title, full date, start/end time, and timezone before saving. Events must start in the future.",
+        );
+      return {
+        title,
+        description,
+        location,
+        startsAt: start.toISOString(),
+        endsAt: end.toISOString(),
+      };
+    });
+    const known = new Set(
+      next.features.events
+        .filter((event) => event.circleId === circleId)
+        .map(canonicalCalendarEvent),
+    );
+    const eventIds: string[] = [];
+    let created = 0,
+      skipped = 0;
+    for (const event of events) {
+      const id = calendarImportId(circleId, event),
+        canonical = canonicalCalendarEvent(event);
+      if (
+        known.has(canonical) ||
+        next.features.events.some((existing) => existing.id === id)
+      ) {
+        skipped++;
+        continue;
+      }
+      known.add(canonical);
+      next.features.events.push({
+        ...event,
+        id,
+        circleId,
+        authorId: identity.$id,
+        createdAt: new Date(now).toISOString(),
+      });
+      eventIds.push(id);
+      created++;
+    }
+    return { store: next, data: { ok: true, created, skipped, eventIds } };
+  }
   if (request.kind === "mediaCapabilities") {
     if (
       !app.members.some(

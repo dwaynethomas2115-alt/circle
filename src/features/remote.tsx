@@ -1,3 +1,10 @@
+import {
+  validateCalendarAnalysisInput,
+  validateCalendarAnalysisResult,
+  validateCalendarImportInput,
+  type CalendarAnalysisResult,
+  type CalendarImportResult,
+} from "./calendarAssistant";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState as NativeAppState } from "react-native";
 import { invokeCircle } from "../lib/appwrite";
@@ -140,8 +147,71 @@ export function useRemoteFeatures(): FeatureContextValue {
     },
     [refresh],
   );
+  const calendarScope = useCallback((circleId: string) => {
+    const latest = current.current;
+    if (latest.authStatus !== "authenticated" || !latest.user) return null;
+    const member = latest.state.members.find(
+      (item) => item.circleId === circleId && item.userId === latest.user!.id,
+    );
+    return member
+      ? JSON.stringify([latest.user.id, circleId, member.role])
+      : null;
+  }, []);
   const actions = useMemo<FeatureActions>(
     () => ({
+      analyzeCalendar: async (input) => {
+        const problem = validateCalendarAnalysisInput(input);
+        if (problem) throw new Error(problem);
+        const scope = calendarScope(input.circleId);
+        if (!scope)
+          throw new Error("Only current Circle members can use calendar AI.");
+        const data = await invokeCircle<CalendarAnalysisResult>({
+          kind: "calendarAssistant",
+          ...input,
+        });
+        if (scope !== calendarScope(input.circleId))
+          throw new Error(
+            "Your Circle access changed. Reopen the calendar to continue.",
+          );
+        if (!validateCalendarAnalysisResult(data))
+          throw new Error(
+            "Calendar AI returned an incomplete proposal. Nothing was saved.",
+          );
+        return data;
+      },
+      importCalendar: async (input) => {
+        const problem = validateCalendarImportInput(input);
+        if (problem) return { ok: false, error: problem };
+        const scope = calendarScope(input.circleId);
+        if (!scope)
+          return {
+            ok: false,
+            error: "Only current Circle members can save calendar events.",
+          };
+        try {
+          const result = await invokeCircle<CalendarImportResult>({
+            kind: "importCalendar",
+            input,
+          });
+          if (scope !== calendarScope(input.circleId))
+            return {
+              ok: false,
+              error:
+                "Your Circle access changed. Reopen the calendar to check what was saved.",
+            };
+          await refresh(true);
+          return result;
+        } catch (cause) {
+          if (scope === calendarScope(input.circleId)) await refresh(true);
+          return {
+            ok: false,
+            error:
+              cause instanceof Error
+                ? cause.message
+                : "Circle could not confirm the calendar import. Review and retry the same events to avoid duplicates.",
+          };
+        }
+      },
       createPoll: (circleId, question, options, closesAt) =>
         dispatch({ type: "createPoll", circleId, question, options, closesAt }),
       vote: (pollId, optionId) => dispatch({ type: "vote", pollId, optionId }),
@@ -207,7 +277,7 @@ export function useRemoteFeatures(): FeatureContextValue {
         }
       },
     }),
-    [dispatch],
+    [dispatch, refresh, calendarScope],
   );
   const safe =
     !!accessScope && loadedFor.current === accessScope
