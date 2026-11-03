@@ -26,6 +26,12 @@ import {
   Layers,
 } from "lucide-react-native";
 import { useCircle } from "../src/state/CircleProvider";
+import { usePostDraftStore } from "../src/state/PostDraftContext";
+import type {
+  PostDraft,
+  PostDraftLease,
+  PostDraftMedia,
+} from "../src/state/postDrafts";
 import {
   T,
   Avatar,
@@ -50,17 +56,7 @@ import type { UploadProgress } from "../src/lib/media";
 import { MAX_POST_PHOTOS } from "../src/lib/postMedia";
 import { colors as c, font } from "../src/ui/theme";
 
-interface ChosenMedia {
-  id: string;
-  uri: string;
-  type: "image" | "video";
-  width: number;
-  height: number;
-  duration?: number;
-  bytes?: number;
-  name?: string;
-  mimeType?: string;
-}
+type ChosenMedia = PostDraftMedia;
 
 /** Expo supplies duration on native; browsers may need to read container metadata. */
 async function videoDuration(
@@ -91,19 +87,44 @@ async function videoDuration(
   });
 }
 
-export default function CreatePost() {
+export default function CreatePostRoute() {
+  const { mode, user, joinedCircles } = useCircle();
+  const { circleId } = useLocalSearchParams<{ circleId?: string }>();
+  const memberships = joinedCircles
+    .map((circle) => circle.id)
+    .sort()
+    .join(",");
+  // Actor/route/membership changes cannot leave the old local draft on screen.
+  return (
+    <CreatePost
+      key={`${mode}:${user?.id || ""}:${circleId || ""}:${memberships}`}
+    />
+  );
+}
+function CreatePost() {
   const { joinedCircles, user, actions, mode } = useCircle();
   const { circleId } = useLocalSearchParams<{ circleId?: string }>();
   const { width } = useWindowDimensions();
   const compact = width < 600;
-  const [circle, setCircle] = useState(circleId || joinedCircles[0]?.id || "");
-  const [content, setContent] = useState("");
+  const drafts = usePostDraftStore();
+  const originatingCircle = useRef(circleId);
+  const restored = useRef<PostDraft | null | undefined>(undefined);
+  if (restored.current === undefined)
+    restored.current = drafts.restore(circleId);
+  const [circle, setCircle] = useState(
+    restored.current?.circleId || circleId || joinedCircles[0]?.id || "",
+  );
+  const [content, setContent] = useState(restored.current?.content || "");
   const [error, setError] = useState("");
   const [stage, setStage] = useState<
     "idle" | "choosing" | "preparing" | "sharing"
   >("idle");
-  const [media, setMedia] = useState<ChosenMedia[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [media, setMedia] = useState<ChosenMedia[]>(
+    restored.current?.media || [],
+  );
+  const [activeId, setActiveId] = useState<string | null>(
+    restored.current?.activeId || null,
+  );
   const [previewWidth, setPreviewWidth] = useState(0);
   const [viewer, setViewer] = useState(false);
   const [preparing, setPreparing] = useState({ current: 0, total: 0 });
@@ -112,8 +133,30 @@ export default function CreatePost() {
   );
   const uploadController = useRef<AbortController | null>(null);
   const locked = useRef(false);
-  const nextId = useRef(0);
+  const nextId = useRef(
+    Math.max(
+      0,
+      ...media.map((item) => Number(item.id.match(/^chosen-(\d+)$/)?.[1]) || 0),
+    ),
+  );
   const mounted = useRef(true);
+  const posted = useRef(false);
+  const lease = useRef<PostDraftLease | null>(null);
+  if (
+    !posted.current &&
+    (lease.current?.circleId !== circle || !drafts.isCurrent(lease.current))
+  )
+    lease.current = drafts.open(circle);
+  useEffect(() => {
+    if (!posted.current)
+      drafts.write(lease.current, {
+        circleId: circle,
+        routeCircleId: originatingCircle.current,
+        content,
+        media,
+        activeId,
+      });
+  }, [drafts, circle, content, media, activeId]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -152,7 +195,9 @@ export default function CreatePost() {
   );
 
   async function pick(type: "images" | "videos") {
-    if (locked.current) return;
+    const pending = lease.current;
+    const current = () => mounted.current && drafts.isCurrent(pending);
+    if (locked.current || !current()) return;
     if (type === "images" && hasVideo) {
       setError(
         "Remove your video before adding photos. Photos and videos have their own posts.",
@@ -171,6 +216,7 @@ export default function CreatePost() {
     try {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!current()) return;
       if (!permission.granted) {
         setError("Allow photo library access to choose something to share.");
         return;
@@ -186,7 +232,7 @@ export default function CreatePost() {
         allowsEditing: false,
         videoExportPreset: ImagePicker.VideoExportPreset.Passthrough,
       });
-      if (result.canceled || !mounted.current) return;
+      if (result.canceled || !current()) return;
       if (type === "images" && result.assets.length > remaining)
         throw new Error(
           `You can add ${remaining} more ${remaining === 1 ? "photo" : "photos"} to this memory.`,
@@ -197,7 +243,7 @@ export default function CreatePost() {
       const chosen: ChosenMedia[] = [];
       // Prepare one image at a time, keeping large source photos out of parallel decoders.
       for (const [index, asset] of result.assets.entries()) {
-        if (!mounted.current) return;
+        if (!current()) return;
         setPreparing({ current: index + 1, total: result.assets.length });
         const isVideo = type === "videos";
         const duration = isVideo
@@ -244,13 +290,13 @@ export default function CreatePost() {
           });
         }
       }
-      if (!mounted.current) return;
+      if (!current()) return;
       setMedia((previous) =>
         type === "images" ? [...previous, ...chosen] : chosen,
       );
       setActiveId(chosen[0]?.id || null);
     } catch (cause) {
-      if (mounted.current)
+      if (current())
         setError(
           cause instanceof Error
             ? cause.message
@@ -258,7 +304,7 @@ export default function CreatePost() {
         );
     } finally {
       locked.current = false;
-      if (mounted.current) setStage("idle");
+      if (current()) setStage("idle");
     }
   }
 
@@ -284,7 +330,14 @@ export default function CreatePost() {
   }
 
   async function publish() {
-    if (locked.current || !chosenCircle || (!content.trim() && !media.length))
+    const pending = lease.current;
+    const current = () => mounted.current && drafts.isCurrent(pending);
+    if (
+      locked.current ||
+      !current() ||
+      !chosenCircle ||
+      (!content.trim() && !media.length)
+    )
       return;
     locked.current = true;
     setStage("sharing");
@@ -311,19 +364,25 @@ export default function CreatePost() {
             }))
           : undefined,
         onUploadProgress: (progress) => {
-          if (mounted.current) setUploadProgress(progress);
+          if (current()) setUploadProgress(progress);
         },
         uploadSignal: controller.signal,
       });
-      if (!mounted.current) return;
+      const mayNavigate = current();
+      if (result.ok) {
+        posted.current = true;
+        // Confirmation may arrive after recovery unmounted this composer.
+        drafts.complete(pending);
+      }
+      if (!mayNavigate || !mounted.current) return;
       if (result.ok) router.replace(("/post/" + result.id) as never);
-      else
+      else if (current())
         setError(
           result.error ||
             "Could not add your memory. Your draft is still here.",
         );
     } catch (cause) {
-      if (mounted.current)
+      if (current())
         setError(
           cause instanceof Error
             ? cause.message
@@ -332,7 +391,7 @@ export default function CreatePost() {
     } finally {
       uploadController.current = null;
       locked.current = false;
-      if (mounted.current) setStage("idle");
+      if (current()) setStage("idle");
     }
   }
 

@@ -383,6 +383,194 @@ test("a snapshot 401 rechecks the account instead of assuming either login or lo
   }
 });
 
+test("one or two snapshot guard conflicts recover through fresh account and complete snapshot reads", async () => {
+  for (const conflicts of [1, 2]) {
+    const calls: string[] = [];
+    let snapshots = 0;
+    const state = privateSnapshot();
+    const result = await loadSessionSnapshot({
+      currentAccount: async () => {
+        calls.push("account");
+        return alice;
+      },
+      snapshot: async () => {
+        calls.push("snapshot");
+        if (++snapshots <= conflicts)
+          throw Object.assign(new Error("Authorization guard changed"), {
+            status: 409,
+            code: "conflict",
+          });
+        return state;
+      },
+      waitForConflictRetry: async (retry) => {
+        calls.push(`wait:${retry}`);
+      },
+    });
+    assert.equal(result.status, "authenticated");
+    assert.equal(result.state, state);
+    assert.deepEqual(calls, [
+      "account",
+      "snapshot",
+      "wait:1",
+      "account",
+      "snapshot",
+      ...(conflicts === 2 ? ["wait:2", "account", "snapshot"] : []),
+    ]);
+  }
+});
+
+test("repeated snapshot conflicts exhaust exactly three attempts and clear private content", async () => {
+  let accounts = 0;
+  let snapshots = 0;
+  const waits: number[] = [];
+  const result = await loadSessionSnapshot({
+    currentAccount: async () => {
+      accounts++;
+      return alice;
+    },
+    snapshot: async () => {
+      snapshots++;
+      throw failure(409);
+    },
+    waitForConflictRetry: async (retry) => {
+      waits.push(retry);
+    },
+  });
+  assert.equal(accounts, 3);
+  assert.equal(snapshots, 3);
+  assert.deepEqual(waits, [1, 2]);
+  assert.equal(result.status, "unknown");
+  assertPrivateCleared(result);
+});
+
+test("a conflict retry uses the newly verified account and rejects old-account data", async () => {
+  for (const returnedAccount of [alice, bob]) {
+    let accounts = 0;
+    let snapshots = 0;
+    const state = connected(returnedAccount).state;
+    const result = await loadSessionSnapshot({
+      currentAccount: async () => (++accounts === 1 ? alice : bob),
+      snapshot: async () => {
+        if (++snapshots === 1) throw failure(409);
+        return state;
+      },
+      waitForConflictRetry: async () => {},
+    });
+    assert.equal(accounts, 2);
+    assert.equal(snapshots, 2);
+    if (returnedAccount === bob) {
+      assert.equal(result.status, "authenticated");
+      assert.equal(result.state, state);
+      assert.equal(result.state.currentUserId, bob.$id);
+    } else {
+      assert.equal(result.status, "unknown");
+      assert.equal(result.state.currentUserId, null);
+      assertPrivateCleared(result);
+    }
+  }
+});
+
+test("a membership revocation conflict recovers only the new restricted projection", async () => {
+  let snapshots = 0;
+  const revoked = connected().state;
+  const result = await loadSessionSnapshot({
+    currentAccount: async () => alice,
+    snapshot: async () => {
+      if (++snapshots === 1) throw failure(409);
+      return revoked;
+    },
+    waitForConflictRetry: async () => {},
+  });
+  assert.equal(result.status, "authenticated");
+  assert.equal(result.state, revoked);
+  assertPrivateCleared(result);
+});
+
+test("an account check failing after a snapshot conflict is authoritative and stops retries", async () => {
+  for (const next of [
+    null,
+    failure(401),
+    failure(403),
+    failure(409),
+    failure(500),
+    new TypeError("offline"),
+  ]) {
+    let accounts = 0;
+    let snapshots = 0;
+    const result = await loadSessionSnapshot({
+      currentAccount: async () => {
+        if (++accounts === 1) return alice;
+        if (next instanceof Error) throw next;
+        return next;
+      },
+      snapshot: async () => {
+        snapshots++;
+        throw failure(409);
+      },
+      waitForConflictRetry: async () => {},
+    });
+    assert.equal(accounts, 2);
+    assert.equal(snapshots, 1);
+    assert.equal(
+      result.status,
+      next === null || (next as { code?: number }).code === 401
+        ? "signedOut"
+        : "unknown",
+    );
+    assertPrivateCleared(result);
+  }
+});
+
+test("non-conflict snapshot failures never enter the upload collision retry path", async () => {
+  for (const error of [
+    failure(403),
+    failure(429),
+    failure(500),
+    new TypeError("offline"),
+  ]) {
+    let accounts = 0;
+    let snapshots = 0;
+    let waits = 0;
+    const result = await loadSessionSnapshot({
+      currentAccount: async () => {
+        accounts++;
+        return alice;
+      },
+      snapshot: async () => {
+        snapshots++;
+        throw error;
+      },
+      waitForConflictRetry: async () => {
+        waits++;
+      },
+    });
+    assert.equal(accounts, 1);
+    assert.equal(snapshots, 1);
+    assert.equal(waits, 0);
+    assert.equal(result.status, "unknown");
+    assertPrivateCleared(result);
+  }
+});
+
+test("snapshot authentication failure following a conflict still rechecks sign-in and fails closed", async () => {
+  let accounts = 0;
+  let snapshots = 0;
+  const result = await loadSessionSnapshot({
+    currentAccount: async () => {
+      if (++accounts === 3) throw failure(401);
+      return alice;
+    },
+    snapshot: async () => {
+      throw failure(++snapshots === 1 ? 409 : 401);
+    },
+    waitForConflictRetry: async () => {},
+  });
+  assert.equal(accounts, 3);
+  assert.equal(snapshots, 2);
+  assert.equal(result.status, "signedOut");
+  assertPrivateCleared(result);
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -390,24 +578,26 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-const connected = (account = alice): SessionRefreshResult => ({
-  status: "authenticated",
-  state: {
-    ...emptyCircle(),
-    currentUserId: account.$id,
-    users: [
-      {
-        id: account.$id,
-        name: account.name,
-        email: account.email,
-        username: "",
-        bio: "",
-        avatar: "",
-      },
-    ],
-  },
-  error: null,
-});
+function connected(account = alice): SessionRefreshResult {
+  return {
+    status: "authenticated",
+    state: {
+      ...emptyCircle(),
+      currentUserId: account.$id,
+      users: [
+        {
+          id: account.$id,
+          name: account.name,
+          email: account.email,
+          username: "",
+          bio: "",
+          avatar: "",
+        },
+      ],
+    },
+    error: null,
+  };
+}
 
 test("overlapping read refreshes share one request instead of racing each other", async () => {
   const pending = deferred<SessionRefreshResult>();

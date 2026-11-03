@@ -84,208 +84,94 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
     >
       {!!features.error && <Banner text={features.error} />}
       {!!notice && <Banner text={notice} onDismiss={() => setNotice("")} />}
-      <Card
-        style={{
-          padding: width < 600 ? 23 : 32,
-          backgroundColor: theme.surface,
-          borderColor: c.line,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            gap: 20,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <View style={{ flex: 1, minWidth: 200 }}>
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 7,
-                marginBottom: 13,
-              }}
-            >
-              <Clapperboard size={15} color={theme.accent} />
-              <T
-                style={{
-                  fontFamily: font.bold,
-                  fontSize: 10,
-                  color: theme.accent,
-                  letterSpacing: 1.7,
-                }}
-              >
-                A FEW PAGES WORTH REVISITING
-              </T>
-            </View>
-            <T
-              style={{
-                fontFamily: font.editorial,
-                fontSize: width < 600 ? 29 : 37,
-                letterSpacing: -0.8,
-                lineHeight: 44,
-              }}
-            >
-              Your Circle’s Highlights.
-            </T>
-            <T
-              style={{
-                color: c.muted,
-                lineHeight: 23,
-                marginTop: 10,
-                maxWidth: 470,
-              }}
-            >
-              {summary.total
-                ? `${summary.total} new ${summary.total === 1 ? "update" : "updates"} from your people since your last visit to Highlights.`
-                : "You’re up to date. Take another look at the moments that made your week."}
-            </T>
-          </View>
+      <View testID="highlights-content">
+        <Card>
           <View
             style={{
-              width: 72,
-              height: 72,
-              borderRadius: 20,
-              backgroundColor: themeTint(theme.accent, 0.12),
-              alignItems: "center",
-              justifyContent: "center",
+              height: width < 600 ? 240 : 310,
+              backgroundColor: "#173E35",
+              overflow: "hidden",
             }}
           >
-            <CheckCheck size={36} strokeWidth={1.4} color={theme.accent} />
-          </View>
-        </View>
-        <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: 12,
-            marginTop: 26,
-          }}
-        >
-          {[
-            { label: "New moments", value: summary.posts.length, icon: Images },
-            {
-              label: "Chat messages",
-              value: summary.messageCount,
-              icon: MessageCircle,
-            },
-            {
-              label: "Comments",
-              value: summary.commentCount,
-              icon: MessageCircle,
-            },
-            {
-              label: "New polls",
-              value: summary.polls.length,
-              icon: BarChart3,
-            },
-          ].map(({ label, value, icon: Icon }) => (
+            {montageCover && (
+              <StableImage
+                uri={montageCover}
+                circleId={circleId}
+                style={StyleSheet.absoluteFillObject}
+              />
+            )}
             <View
-              key={label}
+              style={[
+                StyleSheet.absoluteFillObject,
+                { backgroundColor: "rgba(14,38,33,.32)" },
+              ]}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Play Highlights montage"
+              disabled={!summary.montage.length}
+              onPress={() => setOpen(true)}
               style={{
                 flex: 1,
-                minWidth: 120,
-                backgroundColor: "#F7F7F2",
-                padding: 16,
-                borderRadius: 12,
-                gap: 9,
-              }}
-            >
-              <Icon size={17} color={theme.accent} />
-              <T style={{ fontFamily: font.heading, fontSize: 25 }}>{value}</T>
-              <T style={{ fontSize: 11, color: c.muted }}>{label}</T>
-            </View>
-          ))}
-        </View>
-      </Card>
-      <Card>
-        <View
-          style={{
-            height: width < 600 ? 240 : 310,
-            backgroundColor: "#173E35",
-            overflow: "hidden",
-          }}
-        >
-          {montageCover && (
-            <StableImage
-              uri={montageCover}
-              circleId={circleId}
-              style={StyleSheet.absoluteFillObject}
-            />
-          )}
-          <View
-            style={[
-              StyleSheet.absoluteFillObject,
-              { backgroundColor: "rgba(14,38,33,.32)" },
-            ]}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Play Highlights montage"
-            disabled={!summary.montage.length}
-            onPress={() => setOpen(true)}
-            style={{
-              flex: 1,
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 13,
-            }}
-          >
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 32,
-                backgroundColor: "#FFFFFFEE",
                 alignItems: "center",
                 justifyContent: "center",
+                gap: 13,
               }}
             >
-              <Play
-                size={26}
-                color={theme.accent}
-                fill={theme.accent}
-                style={{ marginLeft: 4 }}
-              />
-            </View>
-            <T
-              style={{
-                fontFamily: font.editorial,
-                fontSize: 30,
-                color: "white",
-              }}
-            >
-              Your Circle, in moments.
-            </T>
-            <T style={{ color: "#FFFFFFCE", fontSize: 12 }}>
-              {summary.montage.length
-                ? `${summary.montage.length} moments · Tap to relive them`
-                : "Your next story starts with a shared moment."}
-            </T>
-          </Pressable>
-        </View>
-        <View
-          style={{
-            padding: 21,
-            flexDirection: "row",
-            gap: 15,
-            alignItems: "center",
-          }}
-        >
-          <View style={{ flex: 1, gap: 5 }}>
-            <T style={{ fontFamily: font.bold, fontSize: 14 }}>
-              Your private Circle montage
-            </T>
-            <T style={{ color: c.muted, fontSize: 11, lineHeight: 18 }}>
-              A playable slideshow of shared photos, videos, and thoughts.
-              Photos in an album play together, one by one.
-            </T>
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 32,
+                  backgroundColor: "#FFFFFFEE",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Play
+                  size={26}
+                  color={theme.accent}
+                  fill={theme.accent}
+                  style={{ marginLeft: 4 }}
+                />
+              </View>
+              <T
+                style={{
+                  fontFamily: font.editorial,
+                  fontSize: 30,
+                  color: "white",
+                }}
+              >
+                Your Circle, in moments.
+              </T>
+              <T style={{ color: "#FFFFFFCE", fontSize: 12 }}>
+                {summary.montage.length
+                  ? `${summary.montage.length} moments · Tap to relive them`
+                  : "Your next story starts with a shared moment."}
+              </T>
+            </Pressable>
           </View>
-          <LockKeyhole size={17} color={theme.accent} />
-        </View>
-      </Card>
+          <View
+            style={{
+              padding: 21,
+              flexDirection: "row",
+              gap: 15,
+              alignItems: "center",
+            }}
+          >
+            <View style={{ flex: 1, gap: 5 }}>
+              <T style={{ fontFamily: font.bold, fontSize: 14 }}>
+                Your private Circle montage
+              </T>
+              <T style={{ color: c.muted, fontSize: 11, lineHeight: 18 }}>
+                A playable slideshow of shared photos, videos, and thoughts.
+                Photos in an album play together, one by one.
+              </T>
+            </View>
+            <LockKeyhole size={17} color={theme.accent} />
+          </View>
+        </Card>
+      </View>
       {summary.posts.length > 0 && (
         <View style={{ gap: 13 }}>
           <T style={{ fontFamily: font.heading, fontSize: 19 }}>
@@ -380,6 +266,130 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
           ))}
         </Card>
       )}
+      <View testID="highlights-info">
+        <Card
+          style={{
+            padding: width < 600 ? 23 : 32,
+            backgroundColor: theme.surface,
+            borderColor: c.line,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              gap: 20,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <View style={{ flex: 1, minWidth: 200 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 7,
+                  marginBottom: 13,
+                }}
+              >
+                <Clapperboard size={15} color={theme.accent} />
+                <T
+                  style={{
+                    fontFamily: font.bold,
+                    fontSize: 10,
+                    color: theme.accent,
+                    letterSpacing: 1.7,
+                  }}
+                >
+                  A FEW PAGES WORTH REVISITING
+                </T>
+              </View>
+              <T
+                style={{
+                  fontFamily: font.editorial,
+                  fontSize: width < 600 ? 29 : 37,
+                  letterSpacing: -0.8,
+                  lineHeight: 44,
+                }}
+              >
+                Your Circle’s Highlights.
+              </T>
+              <T
+                style={{
+                  color: c.muted,
+                  lineHeight: 23,
+                  marginTop: 10,
+                  maxWidth: 470,
+                }}
+              >
+                {summary.total
+                  ? `${summary.total} new ${summary.total === 1 ? "update" : "updates"} from your people since your last visit to Highlights.`
+                  : "You’re up to date. Take another look at the moments that made your week."}
+              </T>
+            </View>
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 20,
+                backgroundColor: themeTint(theme.accent, 0.12),
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <CheckCheck size={36} strokeWidth={1.4} color={theme.accent} />
+            </View>
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: 12,
+              marginTop: 26,
+            }}
+          >
+            {[
+              {
+                label: "New moments",
+                value: summary.posts.length,
+                icon: Images,
+              },
+              {
+                label: "Chat messages",
+                value: summary.messageCount,
+                icon: MessageCircle,
+              },
+              {
+                label: "Comments",
+                value: summary.commentCount,
+                icon: MessageCircle,
+              },
+              {
+                label: "New polls",
+                value: summary.polls.length,
+                icon: BarChart3,
+              },
+            ].map(({ label, value, icon: Icon }) => (
+              <View
+                key={label}
+                style={{
+                  flex: 1,
+                  minWidth: 120,
+                  backgroundColor: "#F7F7F2",
+                  padding: 16,
+                  borderRadius: 12,
+                  gap: 9,
+                }}
+              >
+                <Icon size={17} color={theme.accent} />
+                <T style={{ fontFamily: font.heading, fontSize: 25 }}>
+                  {value}
+                </T>
+                <T style={{ fontSize: 11, color: c.muted }}>{label}</T>
+              </View>
+            ))}
+          </View>
+        </Card>
+      </View>
       <View
         style={{
           flexDirection: "row",

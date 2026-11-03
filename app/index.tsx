@@ -10,7 +10,6 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   Plus,
-  Image as ImageIcon,
   ArrowUpRight,
   ArrowDownUp,
   ArrowRight,
@@ -21,12 +20,12 @@ import {
   X,
   Layers,
   Play,
+  SlidersHorizontal,
 } from "lucide-react-native";
 import { useCircle } from "../src/state/CircleProvider";
 import { visibleMessages } from "../src/state/model";
 import {
   T,
-  Avatar,
   Card,
   Button,
   Empty,
@@ -45,10 +44,11 @@ const monthOf = (date: string) =>
   });
 
 export default function Home() {
-  const { user, ready, joinedCircles, feed, state } = useCircle();
+  const { ready, joinedCircles, feed, state } = useCircle();
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState<"journal" | "photos">("journal");
   const [oldest, setOldest] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const { q } = useLocalSearchParams<{ q?: string }>();
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -88,212 +88,187 @@ export default function Home() {
   if (!ready) return <Loading />;
   return (
     <View style={s.page}>
-      <View style={[s.pageHeading, mobile && { marginBottom: 18 }]}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <T style={s.greeting}>
-            Welcome home, {user?.name.split(" ")[0] || "friend"}.
-          </T>
-          <T style={[s.title, mobile && { fontSize: 33, lineHeight: 40 }]}>
-            A little life, together.
-          </T>
-          <T style={s.subtitle}>
-            Your people. Your moments. A story only you share.
-          </T>
+      <View testID="home-circles" style={{ gap: 0, marginBottom: 14 }}>
+        <View style={s.sectionHeader}>
+          <T style={s.sectionLabel}>YOUR CIRCLES</T>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View all your Circles"
+              onPress={() => go("/circles")}
+              style={s.textLink}
+            >
+              <T style={s.linkText}>View all</T>
+              <ArrowUpRight size={14} color={c.teal} />
+            </Pressable>
+            <Pressable
+              testID="home-feed-options-toggle"
+              accessibilityRole="button"
+              accessibilityLabel="Feed options"
+              accessibilityHint="Choose journal or photo view, filter by Circle, or change moment order"
+              accessibilityState={{ expanded: showOptions }}
+              onPress={() => setShowOptions(!showOptions)}
+              style={({ pressed }) => ({
+                width: 44,
+                height: 44,
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: 12,
+                backgroundColor:
+                  showOptions || pressed ? c.mint : "transparent",
+              })}
+            >
+              <SlidersHorizontal size={18} color={c.teal} />
+            </Pressable>
+          </View>
         </View>
-        {!mobile && (
-          <Button icon={Plus} onPress={() => go("/create")}>
-            Add memory
-          </Button>
-        )}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.worlds}
+        >
+          {joinedCircles.map((circle) => (
+            <Pressable
+              key={circle.id}
+              accessibilityRole="link"
+              accessibilityLabel={`Open ${circle.name}`}
+              onPress={() => go("/circle/" + circle.id)}
+              style={({ pressed }) => [s.world, pressed && { opacity: 0.8 }]}
+            >
+              <View
+                style={[
+                  s.worldPhoto,
+                  mobile && { height: 66 },
+                  { backgroundColor: circle.color },
+                ]}
+              >
+                {!!circle.cover && (
+                  <StableImage uri={circle.cover} style={s.cover} />
+                )}
+                <View style={s.worldBadge}>
+                  <CircleAvatar
+                    avatar={circle.avatar}
+                    color="transparent"
+                    size={24}
+                  />
+                </View>
+              </View>
+              <T numberOfLines={1} style={s.worldName}>
+                {circle.name.replace(/ Circle$/, "")}
+              </T>
+            </Pressable>
+          ))}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Create a new Circle"
+            onPress={() => go("/new-circle")}
+            style={s.addWorld}
+          >
+            <View style={s.addCircle}>
+              <Plus size={20} color={c.teal} strokeWidth={1.5} />
+            </View>
+            <T
+              style={{
+                fontSize: 12,
+                color: c.muted,
+                textAlign: "center",
+                lineHeight: 18,
+              }}
+            >
+              A new{`\n`}little world
+            </T>
+          </Pressable>
+        </ScrollView>
       </View>
       <View style={s.columns}>
-        <View style={s.journal}>
-          {!wide && (
-            <>
-              <View style={s.sectionHeader}>
-                <T style={s.sectionLabel}>YOUR CIRCLES</T>
+        <View testID="home-feed" style={s.journal}>
+          {showOptions && (
+            <View testID="home-feed-options">
+              <View style={s.feedToolbar}>
+                <View accessibilityRole="tablist" style={s.viewTabs}>
+                  {(
+                    [
+                      { id: "journal", title: "Journal", icon: BookOpen },
+                      { id: "photos", title: "Photos", icon: Images },
+                    ] as const
+                  ).map(({ id, title, icon: Icon }) => (
+                    <Pressable
+                      key={id}
+                      accessibilityRole="tab"
+                      accessibilityLabel={`${title} view`}
+                      accessibilityState={{ selected: view === id }}
+                      aria-selected={view === id}
+                      onPress={() => setView(id)}
+                      style={[s.viewTab, view === id && s.viewTabActive]}
+                    >
+                      <Icon
+                        size={16}
+                        color={view === id ? c.ink : c.muted}
+                        strokeWidth={1.7}
+                      />
+                      <T
+                        style={{
+                          fontSize: 13,
+                          fontFamily: view === id ? font.bold : font.medium,
+                          color: view === id ? c.ink : c.muted,
+                        }}
+                      >
+                        {title}
+                      </T>
+                    </Pressable>
+                  ))}
+                </View>
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => go("/circles")}
-                  style={s.textLink}
+                  accessibilityLabel={
+                    oldest ? "Sort newest first" : "Sort oldest first"
+                  }
+                  onPress={() => setOldest(!oldest)}
+                  style={s.sortButton}
                 >
-                  <T style={s.linkText}>View all</T>
-                  <ArrowUpRight size={14} color={c.teal} />
+                  <ArrowDownUp size={14} color={c.muted} />
+                  <T style={{ fontSize: 12, color: c.muted }}>
+                    {oldest ? "Oldest first" : "Latest first"}
+                  </T>
                 </Pressable>
               </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={s.worlds}
+                contentContainerStyle={[
+                  s.filters,
+                  mobile && { paddingVertical: 10 },
+                ]}
               >
-                {joinedCircles.map((circle) => (
+                {[
+                  { id: "all", name: "All Circles" },
+                  ...joinedCircles.map((circle) => ({
+                    id: circle.id,
+                    name: circle.name.replace(/ Circle$/, ""),
+                  })),
+                ].map((item) => (
                   <Pressable
-                    key={circle.id}
-                    accessibilityRole="link"
-                    accessibilityLabel={`Open ${circle.name}`}
-                    onPress={() => go("/circle/" + circle.id)}
-                    style={({ pressed }) => [
-                      s.world,
-                      pressed && { opacity: 0.8 },
-                    ]}
+                    key={item.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: filter === item.id }}
+                    onPress={() => setFilter(item.id)}
+                    style={[s.filter, filter === item.id && s.filterActive]}
                   >
-                    <View
-                      style={[
-                        s.worldPhoto,
-                        mobile && { height: 66 },
-                        { backgroundColor: circle.color },
-                      ]}
+                    <T
+                      style={{
+                        fontSize: 12,
+                        fontFamily:
+                          filter === item.id ? font.bold : font.medium,
+                        color: filter === item.id ? c.teal : c.muted,
+                      }}
                     >
-                      {!!circle.cover && (
-                        <StableImage uri={circle.cover} style={s.cover} />
-                      )}
-                      <View style={s.worldBadge}>
-                        <CircleAvatar
-                          avatar={circle.avatar}
-                          color="transparent"
-                          size={24}
-                        />
-                      </View>
-                    </View>
-                    <T numberOfLines={1} style={s.worldName}>
-                      {circle.name.replace(/ Circle$/, "")}
+                      {item.name}
                     </T>
                   </Pressable>
                 ))}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Create a new Circle"
-                  onPress={() => go("/new-circle")}
-                  style={s.addWorld}
-                >
-                  <View style={s.addCircle}>
-                    <Plus size={20} color={c.teal} strokeWidth={1.5} />
-                  </View>
-                  <T
-                    style={{
-                      fontSize: 12,
-                      color: c.muted,
-                      textAlign: "center",
-                      lineHeight: 18,
-                    }}
-                  >
-                    A new{`\n`}little world
-                  </T>
-                </Pressable>
               </ScrollView>
-            </>
-          )}
-          <Card
-            style={[
-              s.composer,
-              wide && { marginTop: 0 },
-              mobile && { marginTop: 15, padding: 13 },
-            ]}
-          >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add memory"
-              onPress={() => go("/create")}
-              style={s.composerPrompt}
-            >
-              <Avatar name={user?.name || "You"} uri={user?.avatar} size={40} />
-              <View style={{ flex: 1, gap: 4 }}>
-                <T style={{ fontFamily: font.medium, fontSize: 14 }}>
-                  Add memory
-                </T>
-                {!mobile && (
-                  <T style={{ fontSize: 12, color: c.muted }}>
-                    A photo, a few words, a little piece of today.
-                  </T>
-                )}
-              </View>
-              <View pointerEvents="none" style={s.photoButton}>
-                <ImageIcon size={20} color={c.teal} strokeWidth={1.6} />
-              </View>
-            </Pressable>
-          </Card>
-          <View style={[s.feedToolbar, mobile && { marginTop: 17 }]}>
-            <View accessibilityRole="tablist" style={s.viewTabs}>
-              {(
-                [
-                  { id: "journal", title: "Journal", icon: BookOpen },
-                  { id: "photos", title: "Photos", icon: Images },
-                ] as const
-              ).map(({ id, title, icon: Icon }) => (
-                <Pressable
-                  key={id}
-                  accessibilityRole="tab"
-                  accessibilityLabel={`${title} view`}
-                  accessibilityState={{ selected: view === id }}
-                  aria-selected={view === id}
-                  onPress={() => setView(id)}
-                  style={[s.viewTab, view === id && s.viewTabActive]}
-                >
-                  <Icon
-                    size={16}
-                    color={view === id ? c.ink : c.muted}
-                    strokeWidth={1.7}
-                  />
-                  <T
-                    style={{
-                      fontSize: 13,
-                      fontFamily: view === id ? font.bold : font.medium,
-                      color: view === id ? c.ink : c.muted,
-                    }}
-                  >
-                    {title}
-                  </T>
-                </Pressable>
-              ))}
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                oldest ? "Sort newest first" : "Sort oldest first"
-              }
-              onPress={() => setOldest(!oldest)}
-              style={s.sortButton}
-            >
-              <ArrowDownUp size={14} color={c.muted} />
-              <T style={{ fontSize: 12, color: c.muted }}>
-                {oldest ? "Oldest first" : "Latest first"}
-              </T>
-            </Pressable>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[
-              s.filters,
-              mobile && { paddingVertical: 10 },
-            ]}
-          >
-            {[
-              { id: "all", name: "All Circles" },
-              ...joinedCircles.map((circle) => ({
-                id: circle.id,
-                name: circle.name.replace(/ Circle$/, ""),
-              })),
-            ].map((item) => (
-              <Pressable
-                key={item.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: filter === item.id }}
-                onPress={() => setFilter(item.id)}
-                style={[s.filter, filter === item.id && s.filterActive]}
-              >
-                <T
-                  style={{
-                    fontSize: 12,
-                    fontFamily: filter === item.id ? font.bold : font.medium,
-                    color: filter === item.id ? c.teal : c.muted,
-                  }}
-                >
-                  {item.name}
-                </T>
-              </Pressable>
-            ))}
-          </ScrollView>
+          )}
           {!!q && (
             <Pressable
               accessibilityRole="button"
@@ -308,20 +283,20 @@ export default function Home() {
           {view === "journal" ? (
             visible.map((post, index) => (
               <React.Fragment key={post.id}>
-                {(index === 0 ||
+                {index > 0 &&
                   monthOf(post.createdAt) !==
-                    monthOf(visible[index - 1].createdAt)) && (
-                  <View
-                    style={[
-                      s.chapter,
-                      mobile && { marginBottom: 12, marginTop: 5 },
-                    ]}
-                  >
-                    <View style={s.chapterLine} />
-                    <T style={s.chapterText}>{monthOf(post.createdAt)}</T>
-                    <View style={s.chapterLine} />
-                  </View>
-                )}
+                    monthOf(visible[index - 1].createdAt) && (
+                    <View
+                      style={[
+                        s.chapter,
+                        mobile && { marginBottom: 12, marginTop: 5 },
+                      ]}
+                    >
+                      <View style={s.chapterLine} />
+                      <T style={s.chapterText}>{monthOf(post.createdAt)}</T>
+                      <View style={s.chapterLine} />
+                    </View>
+                  )}
                 <PostCard post={post} />
               </React.Fragment>
             ))
@@ -414,60 +389,6 @@ export default function Home() {
                   .toUpperCase()}
               </T>
             </View>
-            <Card style={{ padding: 17 }}>
-              <View style={[s.sectionHeader, { marginBottom: 14 }]}>
-                <T style={s.sectionLabel}>YOUR CIRCLES</T>
-                <Pressable
-                  accessibilityRole="link"
-                  accessibilityLabel="View all your Circles"
-                  onPress={() => go("/circles")}
-                >
-                  <ArrowUpRight size={15} color={c.teal} />
-                </Pressable>
-              </View>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                {joinedCircles.slice(0, 4).map((circle) => (
-                  <Pressable
-                    key={circle.id}
-                    accessibilityRole="link"
-                    accessibilityLabel={`Open ${circle.name}`}
-                    onPress={() => go("/circle/" + circle.id)}
-                    style={{ width: "47%", gap: 7 }}
-                  >
-                    <View
-                      style={{
-                        height: 62,
-                        borderRadius: 6,
-                        overflow: "hidden",
-                        backgroundColor: circle.color,
-                      }}
-                    >
-                      {!!circle.cover && (
-                        <StableImage uri={circle.cover} style={s.cover} />
-                      )}
-                      <View
-                        style={[
-                          s.worldBadge,
-                          { bottom: 4, left: 4, padding: 2 },
-                        ]}
-                      >
-                        <CircleAvatar
-                          avatar={circle.avatar}
-                          color="transparent"
-                          size={18}
-                        />
-                      </View>
-                    </View>
-                    <T
-                      numberOfLines={1}
-                      style={{ fontSize: 11, fontFamily: font.medium }}
-                    >
-                      {circle.name.replace(/ Circle$/, "")}
-                    </T>
-                  </Pressable>
-                ))}
-              </View>
-            </Card>
             <HomeHighlightsCard />
             <Card style={{ padding: 22 }}>
               <View style={s.asideTitle}>
@@ -552,27 +473,6 @@ export default function Home() {
 }
 const s = StyleSheet.create({
   page: { width: "100%" },
-  pageHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 20,
-    marginBottom: 30,
-  },
-  greeting: {
-    fontFamily: font.medium,
-    color: c.teal,
-    fontSize: 12,
-    marginBottom: 9,
-  },
-  title: {
-    fontFamily: font.editorial,
-    fontSize: 41,
-    lineHeight: 50,
-    letterSpacing: -1.2,
-    color: c.ink,
-  },
-  subtitle: { fontSize: 13, lineHeight: 21, color: c.muted, marginTop: 8 },
   columns: { flexDirection: "row", alignItems: "flex-start", gap: 34 },
   journal: { flex: 1, minWidth: 0 },
   sectionHeader: {
@@ -643,34 +543,11 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  composer: {
-    marginTop: 22,
-    padding: 16,
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "center",
-    borderRadius: 14,
-  },
-  composerPrompt: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    minWidth: 0,
-  },
-  photoButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: c.mint,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   feedToolbar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 25,
+    marginTop: 0,
     borderBottomWidth: 1,
     borderColor: c.line,
   },

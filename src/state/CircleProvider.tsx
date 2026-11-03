@@ -1,21 +1,64 @@
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useMemo, useRef } from "react";
 import { isAppwriteEnabled } from "../lib/appwrite";
 import { useDemoCircle } from "./demo";
 import { useRemoteCircle } from "./remote";
 import { CircleContextValue } from "./types";
+import { createPostDraftStore, type PostDraftStore } from "./postDrafts";
+import { PostDraftContext } from "./PostDraftContext";
 export type { CircleContextValue, CircleActions } from "./types";
 const CircleContext = createContext<CircleContextValue | null>(null);
 function DemoProvider({ children }: { children: React.ReactNode }) {
   return (
-    <CircleContext.Provider value={useDemoCircle()}>
+    <CircleValueProvider value={useDemoCircle()}>
       {children}
-    </CircleContext.Provider>
+    </CircleValueProvider>
   );
 }
 function RemoteProvider({ children }: { children: React.ReactNode }) {
   return (
-    <CircleContext.Provider value={useRemoteCircle()}>
+    <CircleValueProvider value={useRemoteCircle()}>
       {children}
+    </CircleValueProvider>
+  );
+}
+function CircleValueProvider({
+  value,
+  children,
+}: {
+  value: CircleContextValue;
+  children: React.ReactNode;
+}) {
+  const storeRef = useRef<PostDraftStore | null>(null);
+  if (!storeRef.current) storeRef.current = createPostDraftStore();
+  const store = storeRef.current;
+  // Observe before child render/cleanup: stale picker callbacks cannot rewrite a
+  // cleared draft during account changes, sign-out, or membership revocation.
+  store.observe({
+    status: !value.ready
+      ? "unknown"
+      : value.authStatus || (value.user ? "authenticated" : "signedOut"),
+    accountId: value.user?.id,
+    circleIds: value.joinedCircles.map((circle) => circle.id),
+  });
+  const actions = useMemo(
+    () => ({
+      ...value.actions,
+      signOut: () => {
+        store.clear();
+        return value.actions.signOut();
+      },
+      deleteAccount: () => {
+        store.clear();
+        return value.actions.deleteAccount();
+      },
+    }),
+    [store, value.actions],
+  );
+  return (
+    <CircleContext.Provider value={{ ...value, actions }}>
+      <PostDraftContext.Provider value={store}>
+        {children}
+      </PostDraftContext.Provider>
     </CircleContext.Provider>
   );
 }

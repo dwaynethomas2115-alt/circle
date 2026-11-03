@@ -131,53 +131,77 @@ const signedOut = (): SessionRefreshResult => ({
 export async function loadSessionSnapshot(services: {
   currentAccount(): Promise<SessionAccount | null>;
   snapshot(): Promise<AppState>;
+  /** Injectable for deterministic tests; production waits briefly between reads. */
+  waitForConflictRetry?: (retry: number) => Promise<void>;
 }): Promise<SessionRefreshResult> {
-  let account: SessionAccount | null;
-  try {
-    account = await services.currentAccount();
-  } catch (cause) {
-    if (sessionHttpStatus(cause) === 401) return signedOut();
-    return unavailable(
-      sessionHttpStatus(cause) === 403
-        ? "Circle could not access your account. Please check your sign-in or try again."
-        : "Circle could not check your sign-in. Please reconnect before continuing.",
-    );
-  }
-  if (!account) return signedOut();
-  try {
-    const state = await services.snapshot();
-    if (
-      state.currentUserId !== account.$id ||
-      !state.users.some((profile) => profile.id === account.$id)
-    )
+  // Upload finalization and other legitimate writes can invalidate the snapshot's
+  // authorization guard. Retry only that 409, at most twice, with fresh identity
+  // and a wholly new authorized projection. Never reuse the rejected read.
+  for (let attempt = 0; ; attempt++) {
+    let account: SessionAccount | null;
+    try {
+      account = await services.currentAccount();
+    } catch (cause) {
+      if (sessionHttpStatus(cause) === 401) return signedOut();
       return unavailable(
-        "Your account changed while Circle was refreshing. Please reconnect.",
+        sessionHttpStatus(cause) === 403
+          ? "Circle could not access your account. Please check your sign-in or try again."
+          : "Circle could not check your sign-in. Please reconnect before continuing.",
       );
-    return { status: "authenticated", state, error: null };
-  } catch (cause) {
-    if (sessionHttpStatus(cause) === 401) {
-      // A cookie can expire after the first account check, while a Function's
-      // own authentication can fail independently of an otherwise valid cookie.
-      try {
-        const latest = await services.currentAccount();
-        if (!latest) return signedOut();
-        return unavailable(
-          latest.$id === account.$id
-            ? "Your account is still signed in, but Circle could not load your private data. Please reconnect."
-            : "Your account changed while Circle was refreshing. Please reconnect.",
-          latest,
-        );
-      } catch (checkFailure) {
-        if (sessionHttpStatus(checkFailure) === 401) return signedOut();
-        return unavailable(
-          "Circle could not recheck your sign-in. Please reconnect before continuing.",
-        );
-      }
     }
-    return unavailable(
-      "Your account is still signed in, but Circle could not refresh your private data. Please try again.",
-      account,
-    );
+    if (!account) return signedOut();
+    try {
+      const state = await services.snapshot();
+      if (
+        state.currentUserId !== account.$id ||
+        !state.users.some((profile) => profile.id === account.$id)
+      )
+        return unavailable(
+          "Your account changed while Circle was refreshing. Please reconnect.",
+        );
+      return { status: "authenticated", state, error: null };
+    } catch (cause) {
+      if (sessionHttpStatus(cause) === 409 && attempt < 2) {
+        try {
+          const retry = attempt + 1;
+          if (services.waitForConflictRetry)
+            await services.waitForConflictRetry(retry);
+          else
+            await new Promise<void>((resolve) =>
+              setTimeout(resolve, retry * 100),
+            );
+        } catch {
+          return unavailable(
+            "Circle could not recheck your connection. Please try again.",
+            account,
+          );
+        }
+        continue;
+      }
+      if (sessionHttpStatus(cause) === 401) {
+        // A cookie can expire after the first account check, while a Function's
+        // own authentication can fail independently of an otherwise valid cookie.
+        try {
+          const latest = await services.currentAccount();
+          if (!latest) return signedOut();
+          return unavailable(
+            latest.$id === account.$id
+              ? "Your account is still signed in, but Circle could not load your private data. Please reconnect."
+              : "Your account changed while Circle was refreshing. Please reconnect.",
+            latest,
+          );
+        } catch (checkFailure) {
+          if (sessionHttpStatus(checkFailure) === 401) return signedOut();
+          return unavailable(
+            "Circle could not recheck your sign-in. Please reconnect before continuing.",
+          );
+        }
+      }
+      return unavailable(
+        "Your account is still signed in, but Circle could not refresh your private data. Please try again.",
+        account,
+      );
+    }
   }
 }
 
