@@ -1,3 +1,8 @@
+import sharp from "sharp";
+import {
+  CALENDAR_MODEL,
+  type CalendarJobResult,
+} from "../../src/features/calendarJobs";
 import {
   CALENDAR_LIMITS,
   validateCalendarAnalysisInput,
@@ -126,15 +131,8 @@ Return at most 20 proposals with unique short IDs. If the source contains more t
 export async function analyzeCalendar(
   input: CalendarAnalysisInput,
   apiKey: string,
-  model: string | undefined,
   transport: typeof fetch = fetch,
 ): Promise<CalendarAnalysisResult> {
-  if (!model?.trim())
-    throw new CalendarAIError(
-      "Calendar AI is not enabled. The app owner must approve and configure its model first.",
-      503,
-      "calendar_ai_disabled",
-    );
   if (!apiKey)
     throw new CalendarAIError(
       "Calendar AI needs the existing server-side OpenAI connection checked by the app owner.",
@@ -143,7 +141,29 @@ export async function analyzeCalendar(
     );
   const problem = validateCalendarAnalysisInput(input);
   if (problem) throw new CalendarAIError(problem);
-  if (input.source?.kind === "image") validateJpeg(input.source.dataUrl);
+  if (input.source?.kind === "image") {
+    validateJpeg(input.source.dataUrl);
+    try {
+      const image = sharp(
+        Buffer.from(input.source.dataUrl.split(",")[1], "base64"),
+        { limitInputPixels: CALENDAR_LIMITS.maxImagePixels, failOn: "warning" },
+      );
+      const metadata = await image.metadata();
+      if (
+        metadata.format !== "jpeg" ||
+        !metadata.width ||
+        !metadata.height ||
+        metadata.width > CALENDAR_LIMITS.maxImageEdge ||
+        metadata.height > CALENDAR_LIMITS.maxImageEdge
+      )
+        throw new Error();
+      await image.stats();
+    } catch {
+      throw new CalendarAIError(
+        "Choose a valid, readable JPEG calendar photo within the supported limits.",
+      );
+    }
+  }
   const data = {
     referenceDate: input.referenceDate,
     timeZone: input.timeZone,
@@ -166,7 +186,7 @@ export async function analyzeCalendar(
       },
       signal: AbortSignal.timeout(45_000),
       body: JSON.stringify({
-        model: model.trim(),
+        model: CALENDAR_MODEL,
         store: false,
         max_completion_tokens: 6000,
         messages: [
@@ -219,8 +239,21 @@ export async function analyzeCalendar(
     );
   }
   try {
-    const responseText = await response.text();
-    if (Buffer.byteLength(responseText) > 150_000) throw new Error();
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      bytes += next.value.length;
+      if (bytes > 150_000) {
+        await reader.cancel();
+        throw new Error();
+      }
+      chunks.push(next.value);
+    }
+    const responseText = Buffer.concat(chunks).toString("utf8");
     const value = JSON.parse(responseText);
     if (
       value.choices?.[0]?.finish_reason === "length" ||
@@ -230,7 +263,11 @@ export async function analyzeCalendar(
     const result: unknown = JSON.parse(
       value.choices?.[0]?.message?.content || "",
     );
-    if (!validateCalendarAnalysisResult(result)) throw new Error();
+    if (
+      !validateCalendarAnalysisResult(result) ||
+      Buffer.byteLength(JSON.stringify(result)) > 24000
+    )
+      throw new Error();
     return result;
   } catch {
     throw new CalendarAIError(
@@ -239,4 +276,85 @@ export async function analyzeCalendar(
       "calendar_provider_response",
     );
   }
+}
+
+export interface CalendarJob extends CalendarJobResult {
+  owner: string;
+  circleId: string;
+  requestId: string;
+  inputHash: string;
+  createdAt: number;
+  saveHash?: string;
+}
+export const calendarJobKey = (owner: string, requestId: string) =>
+  `calendar:${owner}:${requestId}`;
+export const calendarPayloadHash = (value: unknown) =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
+export function publicCalendarResult(job: CalendarJob): CalendarJobResult {
+  if (job.status !== "saved" && Date.now() - job.createdAt > 86400000)
+    return {
+      requestId: job.requestId,
+      circleId: job.circleId,
+      status: "failed",
+      error: "This calendar analysis expired. Start a new analysis.",
+    };
+  if (job.status === "processing" && Date.now() - job.createdAt > 180000)
+    return {
+      requestId: job.requestId,
+      circleId: job.circleId,
+      status: "failed",
+      error:
+        "The analysis stopped before recording a result. This request will not start another provider call; start a new analysis only if you want a new paid attempt.",
+    };
+  return {
+    requestId: job.requestId,
+    circleId: job.circleId,
+    status: job.status,
+    ...(job.proposal ? { proposal: job.proposal } : {}),
+    ...(job.error ? { error: job.error } : {}),
+    ...(job.receipt ? { receipt: job.receipt } : {}),
+  };
+}
+
+/** Persist only bounded proposals/receipts; never the original source or chat. */
+export function finishCalendar(
+  store: import("./domain").Store,
+  identity: import("./domain").Identity,
+  circleId: string,
+  requestId: string,
+  proposal?: CalendarAnalysisResult,
+  error?: string,
+) {
+  if (
+    !store.app.members.some(
+      (member) =>
+        member.circleId === circleId && member.userId === identity.$id,
+    )
+  )
+    throw new CalendarAIError(
+      "Join this Circle before using its calendar assistant.",
+      403,
+      "calendar_membership_required",
+    );
+  const job = store.calendarJobs?.[calendarJobKey(identity.$id, requestId)];
+  if (!job || job.owner !== identity.$id || job.circleId !== circleId)
+    throw new CalendarAIError("Calendar import unavailable.", 404);
+  if (job.status !== "processing")
+    return { store, data: publicCalendarResult(job) };
+  if (proposal) {
+    if (
+      !validateCalendarAnalysisResult(proposal) ||
+      Buffer.byteLength(JSON.stringify(proposal)) > 24000
+    )
+      throw new CalendarAIError(
+        "Too much extracted text. Analyze a smaller source.",
+      );
+    job.status = "ready";
+    job.proposal = proposal;
+  } else {
+    job.status = "failed";
+    job.error =
+      error || "Calendar analysis failed. Start a new request to try again.";
+  }
+  return { store, data: publicCalendarResult(job) };
 }

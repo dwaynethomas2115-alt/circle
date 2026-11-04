@@ -1,4 +1,5 @@
 import { ThemeGenerationError } from "../features/theme-errors";
+import { validateCalendarAnalysisResult } from "../features/calendarAssistant";
 
 export interface CircleExecution {
   $id: string;
@@ -49,6 +50,31 @@ type ThemeResult<T> =
 // The caller scopes these keys to endpoint, project, Function and signed-in user.
 const pendingThemeJobs = new Map<string, PendingThemeJob>();
 const activeThemeRequests = new Map<string, Promise<unknown>>();
+
+/** Retrying this error keeps the caller's request ID. It must not imply a new
+ * paid analysis until the caller explicitly chooses to start one. */
+export class CalendarJobError extends Error {
+  constructor(
+    message: string,
+    readonly code:
+      "calendar_pending" | "calendar_terminal" | "calendar_backend_update",
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+const calendarPending = () =>
+  new CalendarJobError(
+    "Calendar analysis is not confirmed yet. Retry the unchanged input to check the same request; do not start a new analysis unless you intend another paid attempt.",
+    "calendar_pending",
+    202,
+  );
+const calendarUpdate = () =>
+  new CalendarJobError(
+    "Calendar AI needs the matching Circle server update with gpt-6-luna enabled. Analysis does not save events; check the server before trying again.",
+    "calendar_backend_update",
+    503,
+  );
 const pendingError = () =>
   new ThemeGenerationError(202, {
     code: "theme_pending",
@@ -110,6 +136,12 @@ export async function runCircleExecution<T>(
   service: ExecutionService,
   options: ExecutionOptions,
 ): Promise<T> {
+  if (
+    options.body &&
+    typeof options.body === "object" &&
+    (options.body as { kind?: unknown }).kind === "analyzeCalendar"
+  )
+    return runCalendarExecution<T>(service, options);
   if (!options.themeJobKey) {
     // Ordinary requests are synchronous: their response body is available.
     return parseExecution<T>(
@@ -131,6 +163,202 @@ export async function runCircleExecution<T>(
     if (activeThemeRequests.get(key) === request)
       activeThemeRequests.delete(key);
   }
+}
+
+/** The server's actor-scoped durable claim owns idempotency. Keep no global
+ * calendar source/result cache here: a shared SDK service can change accounts.
+ * Async execution bodies are never used as a source of private results. */
+async function runCalendarExecution<T>(
+  service: ExecutionService,
+  options: ExecutionOptions,
+): Promise<T> {
+  const body = options.body as {
+    circleId?: unknown;
+    requestId?: unknown;
+    input?: unknown;
+  };
+  if (
+    typeof body.circleId !== "string" ||
+    !body.circleId ||
+    body.circleId.length > 128 ||
+    typeof body.requestId !== "string" ||
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+      body.requestId,
+    ) ||
+    !body.input ||
+    typeof body.input !== "object" ||
+    Array.isArray(body.input) ||
+    (body.input as { circleId?: unknown }).circleId !== body.circleId
+  )
+    throw new CalendarJobError(
+      "Choose a Circle and a valid calendar request before analyzing.",
+      "calendar_backend_update",
+      400,
+    );
+  const circleId = body.circleId,
+    requestId = body.requestId;
+  const now = options.now || Date.now;
+  const started = now(),
+    wallStarted = Date.now(),
+    budget = Math.max(1, options.timeoutMs ?? 120_000),
+    deadline = started + budget;
+  // Wall time remains a hard bound even when deterministic tests supply a clock.
+  const remaining = () =>
+    Math.min(deadline - now(), budget - (Date.now() - wallStarted));
+  const pause =
+    options.pause ||
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const bounded = async <V>(work: () => Promise<V>): Promise<V> => {
+    if (remaining() <= 0) throw calendarPending();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(work),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(calendarPending()),
+            Math.max(1, Math.min(15_000, remaining())),
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+  const call = async <V>(request: unknown) =>
+    parseExecution<V>(
+      await bounded(() =>
+        service.createExecution({
+          functionId: options.functionId,
+          body: JSON.stringify(request),
+          async: false,
+        }),
+      ),
+    );
+  let capabilities: {
+    model?: unknown;
+    enabled?: unknown;
+    version?: unknown;
+    reviewContractVersion?: unknown;
+  };
+  try {
+    capabilities = await call({ kind: "calendarCapabilities", circleId });
+  } catch (cause) {
+    if ([401, 403].includes(errorStatus(cause) || 0)) throw cause;
+    if (cause instanceof CalendarJobError) throw cause;
+    const status = errorStatus(cause);
+    if (
+      [400, 404, 422].includes(status || 0) ||
+      (cause instanceof Error &&
+        /Appwrite Function (?:did not return a valid response|could not finish the request)/.test(
+          cause.message,
+        ))
+    )
+      throw calendarUpdate();
+    if (status === undefined) throw calendarPending();
+    throw cause;
+  }
+  if (
+    !capabilities ||
+    capabilities.model !== "gpt-6-luna" ||
+    capabilities.enabled !== true ||
+    !(capabilities.version === 2 || capabilities.reviewContractVersion === 2)
+  )
+    throw calendarUpdate();
+
+  try {
+    await bounded(() =>
+      service.createExecution({
+        functionId: options.functionId,
+        body: JSON.stringify(options.body),
+        async: true,
+      }),
+    );
+  } catch (cause) {
+    if ([401, 403].includes(errorStatus(cause) || 0)) throw cause;
+    // A dispatch response can be lost after the worker was queued. Read only
+    // this request's durable result; never mint a new request ID here.
+    if (remaining() <= 0) throw calendarPending();
+  }
+
+  while (remaining() > 0) {
+    let result: Record<string, unknown>;
+    try {
+      const value: unknown = await call({
+        kind: "calendarResult",
+        circleId,
+        requestId,
+      });
+      if (!value || typeof value !== "object" || Array.isArray(value))
+        throw calendarUpdate();
+      result = value as Record<string, unknown>;
+    } catch (cause) {
+      if (cause instanceof CalendarJobError) throw cause;
+      const status = errorStatus(cause);
+      const missing =
+        status === 404 ||
+        (status === 400 &&
+          cause instanceof Error &&
+          /calendar (?:import|analysis|request|job).*not found/i.test(
+            cause.message,
+          ));
+      const temporary =
+        missing ||
+        status === undefined ||
+        [408, 409, 429].includes(status) ||
+        status >= 500;
+      if (
+        cause instanceof Error &&
+        /Appwrite Function (?:did not return a valid response|could not finish the request)/.test(
+          cause.message,
+        )
+      )
+        throw calendarUpdate();
+      if (!temporary) throw cause;
+      await bounded(() => pause(Math.min(1_500, remaining())));
+      continue;
+    }
+    if (result.circleId !== circleId || result.requestId !== requestId)
+      throw new CalendarJobError(
+        "The calendar server returned a different request. Nothing was saved; reopen this Circle's calendar.",
+        "calendar_backend_update",
+        502,
+      );
+    if (result.status === "failed")
+      throw new CalendarJobError(
+        typeof result.error === "string" && result.error.length <= 1000
+          ? result.error
+          : "Calendar analysis failed. Choose a new analysis only if you intend another paid attempt.",
+        "calendar_terminal",
+        422,
+      );
+    if (result.status === "ready") {
+      if (!validateCalendarAnalysisResult(result.proposal))
+        throw calendarUpdate();
+      return result as T;
+    }
+    if (result.status === "saved") {
+      const receipt = result.receipt as Record<string, unknown> | undefined;
+      if (
+        !receipt ||
+        receipt.ok !== true ||
+        (receipt.eventIds !== undefined &&
+          (!Array.isArray(receipt.eventIds) ||
+            receipt.eventIds.length > 20 ||
+            receipt.eventIds.some((id) => typeof id !== "string"))) ||
+        [receipt.created, receipt.skipped].some(
+          (count) =>
+            count !== undefined &&
+            (!Number.isSafeInteger(count) || (count as number) < 0),
+        )
+      )
+        throw calendarUpdate();
+      return result as T;
+    }
+    if (result.status !== "processing") throw calendarUpdate();
+    await bounded(() => pause(Math.min(1_500, remaining())));
+  }
+  throw calendarPending();
 }
 
 async function runThemeExecution<T>(

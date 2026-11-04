@@ -1,9 +1,9 @@
+import type { CalendarJobResult } from "./calendarJobs";
+import { CalendarJobError } from "../lib/appwriteExecution";
 import {
   validateCalendarAnalysisInput,
   validateCalendarAnalysisResult,
   validateCalendarImportInput,
-  type CalendarAnalysisResult,
-  type CalendarImportResult,
 } from "./calendarAssistant";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState as NativeAppState } from "react-native";
@@ -159,27 +159,44 @@ export function useRemoteFeatures(): FeatureContextValue {
   }, []);
   const actions = useMemo<FeatureActions>(
     () => ({
-      analyzeCalendar: async (input) => {
+      analyzeCalendar: async (input, requestId) => {
         const problem = validateCalendarAnalysisInput(input);
         if (problem) throw new Error(problem);
         const scope = calendarScope(input.circleId);
         if (!scope)
           throw new Error("Only current Circle members can use calendar AI.");
-        const data = await invokeCircle<CalendarAnalysisResult>({
-          kind: "calendarAssistant",
-          ...input,
+        if (
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            requestId,
+          )
+        )
+          throw new Error("Start a new calendar analysis before continuing.");
+        const job = await invokeCircle<CalendarJobResult>({
+          kind: "analyzeCalendar",
+          circleId: input.circleId,
+          requestId,
+          input,
         });
+        const data = job.status === "ready" ? job.proposal : undefined;
         if (scope !== calendarScope(input.circleId))
           throw new Error(
             "Your Circle access changed. Reopen the calendar to continue.",
           );
+        if (job.status === "saved") {
+          await refresh(true);
+          throw new CalendarJobError(
+            "This analysis was already saved. Check the calendar before starting a new analysis.",
+            "calendar_terminal",
+          );
+        }
         if (!validateCalendarAnalysisResult(data))
-          throw new Error(
-            "Calendar AI returned an incomplete proposal. Nothing was saved.",
+          throw new CalendarJobError(
+            "Calendar AI returned an incomplete proposal. No additional events were saved.",
+            "calendar_terminal",
           );
         return data;
       },
-      importCalendar: async (input) => {
+      importCalendar: async (input, requestId) => {
         const problem = validateCalendarImportInput(input);
         if (problem) return { ok: false, error: problem };
         const scope = calendarScope(input.circleId);
@@ -189,10 +206,32 @@ export function useRemoteFeatures(): FeatureContextValue {
             error: "Only current Circle members can save calendar events.",
           };
         try {
-          const result = await invokeCircle<CalendarImportResult>({
-            kind: "importCalendar",
-            input,
+          if (
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              requestId,
+            )
+          )
+            return {
+              ok: false,
+              error:
+                "Analyze the source and review its proposals before saving.",
+            };
+          const job = await invokeCircle<CalendarJobResult>({
+            kind: "saveCalendar",
+            circleId: input.circleId,
+            requestId,
+            confirmed: true,
+            events: input.events.map((event) => ({ ...event, reviewed: true })),
           });
+          if (job.circleId !== input.circleId || job.requestId !== requestId)
+            throw new Error(
+              "Circle returned a receipt for a different calendar request. Reopen the calendar before continuing.",
+            );
+          const result = job.status === "saved" ? job.receipt : undefined;
+          if (!result?.ok)
+            throw new Error(
+              "Circle could not confirm this import. Retry the same reviewed batch to check its saved receipt.",
+            );
           if (scope !== calendarScope(input.circleId))
             return {
               ok: false,

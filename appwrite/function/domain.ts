@@ -1,5 +1,16 @@
 import { randomBytes, createHash, randomUUID } from "node:crypto";
-import { CalendarAIError, calendarImportId } from "./calendar-ai";
+import {
+  CalendarAIError,
+  calendarImportId,
+  calendarJobKey,
+  calendarPayloadHash,
+  publicCalendarResult,
+  type CalendarJob,
+} from "./calendar-ai";
+import {
+  CALENDAR_MODEL,
+  type CalendarJobResult,
+} from "../../src/features/calendarJobs";
 import {
   canonicalCalendarEvent,
   type CalendarImportResult,
@@ -63,6 +74,7 @@ export type ThemeJobResult =
   | { status: "completed"; theme: CircleTheme }
   | ({ status: "failed" } & ThemeFailure);
 export interface Store {
+  calendarJobs?: Record<string, CalendarJob>;
   generations?: Record<string, number[] | ThemeQuota>;
   proposals?: Record<
     string,
@@ -162,7 +174,9 @@ export function execute(
     | ThemeJobResult
     | { requestId: string }
     | PostMediaCapabilities
-    | CalendarImportResult;
+    | CalendarImportResult
+    | (CalendarJobResult & { claimed?: boolean })
+    | { model: string; enabled: boolean; reviewContractVersion: number };
 } {
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success)
@@ -186,13 +200,13 @@ export function execute(
     features: structuredClone(store.features),
   };
   if (
-    request.kind === "calendarAssistant" ||
-    request.kind === "importCalendar"
+    request.kind === "calendarCapabilities" ||
+    request.kind === "analyzeCalendar" ||
+    request.kind === "calendarResult" ||
+    request.kind === "saveCalendar"
   ) {
-    const circleId =
-      request.kind === "calendarAssistant"
-        ? request.circleId
-        : request.input.circleId;
+    if (!("circleId" in request)) throw new CalendarAIError("Choose a Circle.");
+    const circleId = request.circleId;
     if (
       !app.circles.some((circle) => circle.id === circleId) ||
       !app.members.some(
@@ -205,11 +219,75 @@ export function execute(
         403,
         "calendar_membership_required",
       );
-    if (request.kind === "calendarAssistant")
-      return { store: next, data: { ok: true } };
-    const now = Date.now();
-    // Validate the full reviewed batch before changing any event. Never save partial imports.
-    const events = request.input.events.map((event) => {
+    if (request.kind === "calendarCapabilities")
+      return {
+        store: next,
+        data: {
+          model: CALENDAR_MODEL,
+          enabled: true,
+          reviewContractVersion: 2,
+        },
+      };
+    if (
+      request.kind !== "analyzeCalendar" &&
+      request.kind !== "calendarResult" &&
+      request.kind !== "saveCalendar"
+    )
+      throw new CalendarAIError("Invalid calendar request.");
+    next.calendarJobs ??= {};
+    const key = calendarJobKey(identity.$id, request.requestId),
+      old = next.calendarJobs[key];
+    if (old && (old.owner !== identity.$id || old.circleId !== circleId))
+      throw new CalendarAIError("Calendar import unavailable.", 404);
+    if (request.kind === "analyzeCalendar") {
+      const inputHash = calendarPayloadHash(request.input);
+      if (old) {
+        if (old.inputHash !== inputHash)
+          throw new CalendarAIError(
+            "This request ID belongs to different source material. Start a new analysis.",
+          );
+        return { store: next, data: publicCalendarResult(old) };
+      }
+      const job: CalendarJob = {
+        owner: identity.$id,
+        circleId,
+        requestId: request.requestId,
+        inputHash,
+        createdAt: Date.now(),
+        status: "processing",
+      };
+      next.calendarJobs[key] = job;
+      return {
+        store: next,
+        data: { ...publicCalendarResult(job), claimed: true },
+      };
+    }
+    if (!old)
+      throw new CalendarAIError(
+        "Calendar import not found. Retry the same analysis request.",
+        404,
+        "calendar_import_not_found",
+      );
+    if (request.kind === "calendarResult")
+      return { store: next, data: publicCalendarResult(old) };
+    const saveHash = calendarPayloadHash(request.events);
+    if (old.status === "saved") {
+      if (old.saveHash !== saveHash)
+        throw new CalendarAIError(
+          "This import was already saved with different event details. Refresh the calendar.",
+        );
+      return { store: next, data: publicCalendarResult(old) };
+    }
+    if (old.status !== "ready" || Date.now() - old.createdAt > 86400000)
+      throw new CalendarAIError(
+        "Analyze a fresh source before saving these events.",
+      );
+    // Validate the entire reviewed batch before modifying any event or receipt.
+    const events = request.events.map((event) => {
+      if (!request.confirmed || event.reviewed !== true)
+        throw new CalendarAIError(
+          "Review every event and confirm the final batch before saving.",
+        );
       const start = new Date(event.startsAt),
         end = new Date(event.endsAt);
       const title = event.title.trim(),
@@ -222,7 +300,7 @@ export function execute(
         location.length > 200 ||
         !Number.isFinite(start.getTime()) ||
         !Number.isFinite(end.getTime()) ||
-        start.getTime() <= now ||
+        start.getTime() <= Date.now() ||
         end.getTime() <= start.getTime() ||
         start.toISOString().slice(0, 10) !== event.startsAt.slice(0, 10) ||
         end.toISOString().slice(0, 10) !== event.endsAt.slice(0, 10)
@@ -238,36 +316,45 @@ export function execute(
         endsAt: end.toISOString(),
       };
     });
-    const known = new Set(
+    const known = new Map(
       next.features.events
         .filter((event) => event.circleId === circleId)
-        .map(canonicalCalendarEvent),
+        .map((event) => [canonicalCalendarEvent(event), event.id]),
     );
     const eventIds: string[] = [];
     let created = 0,
       skipped = 0;
     for (const event of events) {
-      const id = calendarImportId(circleId, event),
-        canonical = canonicalCalendarEvent(event);
-      if (
-        known.has(canonical) ||
-        next.features.events.some((existing) => existing.id === id)
-      ) {
+      const canonical = canonicalCalendarEvent(event),
+        id = calendarImportId(circleId, event),
+        existing = known.get(canonical);
+      if (existing || next.features.events.some((item) => item.id === id)) {
         skipped++;
+        eventIds.push(existing || id);
         continue;
       }
-      known.add(canonical);
+      known.set(canonical, id);
       next.features.events.push({
         ...event,
         id,
         circleId,
         authorId: identity.$id,
-        createdAt: new Date(now).toISOString(),
+        createdAt: new Date().toISOString(),
       });
       eventIds.push(id);
       created++;
     }
-    return { store: next, data: { ok: true, created, skipped, eventIds } };
+    const receipt: CalendarImportResult = {
+      ok: true,
+      created,
+      skipped,
+      eventIds,
+    };
+    old.status = "saved";
+    old.saveHash = saveHash;
+    old.receipt = receipt;
+    delete old.proposal;
+    return { store: next, data: publicCalendarResult(old) };
   }
   if (request.kind === "mediaCapabilities") {
     if (

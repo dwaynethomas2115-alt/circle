@@ -188,36 +188,54 @@ const calendarImportEvent = z
   })
   .strict();
 export const requestSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("calendarCapabilities"), circleId: id }).strict(),
   z
     .object({
-      kind: z.literal("calendarAssistant"),
+      kind: z.literal("analyzeCalendar"),
       circleId: id,
-      message: text(4000),
-      history: z
-        .array(
-          z
-            .object({
-              role: z.enum(["user", "assistant"]),
-              content: text(2000),
-            })
-            .strict(),
-        )
-        .max(6),
-      source: calendarSource.optional(),
-      referenceDate: text(10).regex(/^\d{4}-\d{2}-\d{2}$/),
-      timeZone: text(100).nullable(),
+      requestId: z.string().uuid(),
+      input: z
+        .object({
+          circleId: id,
+          message: text(4000),
+          history: z
+            .array(
+              z
+                .object({
+                  role: z.enum(["user", "assistant"]),
+                  content: text(2000),
+                })
+                .strict(),
+            )
+            .max(6),
+          source: calendarSource.optional(),
+          referenceDate: text(10).regex(/^\d{4}-\d{2}-\d{2}$/),
+          timeZone: text(100).nullable(),
+        })
+        .strict(),
+    })
+    .strict()
+    .refine(
+      (value) => value.circleId === value.input.circleId,
+      "Choose the same Circle for this calendar request.",
+    ),
+  z
+    .object({
+      kind: z.literal("calendarResult"),
+      circleId: id,
+      requestId: z.string().uuid(),
     })
     .strict(),
   z
     .object({
-      kind: z.literal("importCalendar"),
-      input: z
-        .object({
-          circleId: id,
-          confirmed: z.literal(true),
-          events: z.array(calendarImportEvent).min(1).max(20),
-        })
-        .strict(),
+      kind: z.literal("saveCalendar"),
+      circleId: id,
+      requestId: z.string().uuid(),
+      confirmed: z.literal(true),
+      events: z
+        .array(calendarImportEvent.extend({ reviewed: z.literal(true) }))
+        .min(1)
+        .max(20),
     })
     .strict(),
   z

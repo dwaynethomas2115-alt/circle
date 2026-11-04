@@ -83,8 +83,12 @@ export interface ThemeResult extends Result {
 export interface FeatureActions {
   analyzeCalendar(
     input: CalendarAnalysisInput,
+    requestId: string,
   ): Promise<CalendarAnalysisResult>;
-  importCalendar(input: CalendarImportInput): Promise<CalendarImportResult>;
+  importCalendar(
+    input: CalendarImportInput,
+    requestId: string,
+  ): Promise<CalendarImportResult>;
   createPoll(
     circleId: string,
     question: string,

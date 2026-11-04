@@ -1,6 +1,12 @@
-# Calendar AI: local implementation and activation review
+# Historical original Calendar AI review (7de5ca6)
 
-Prepared locally at Dwayne's request. No publication, deployment, production
+This document records the original prototype at `7de5ca6a8a756e663b3c897974dc65b7acd9cc05`.
+Its disabled-model gate, transient-only result design, and bundle hashes are
+superseded. Dwayne subsequently approved enabled Luna and deployment.
+Use [the reconciled deployment guide](CALENDAR_AI_RECONCILIATION.md) for current
+behavior, source comparison, schema, validation, bundle hashes, and blockers.
+
+Historical text follows for traceability. Prepared locally at Dwayne's request. No publication, deployment, production
 configuration, real uploads, calendar mutations, or paid provider calls are
 authorized by this implementation. The reconciled base is
 `bbddc692ab2619a1d2ada0a4a569d9bc8d2c9216`.

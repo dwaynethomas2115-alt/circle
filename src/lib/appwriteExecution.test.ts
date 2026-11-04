@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runCircleExecution, type CircleExecution } from "./appwriteExecution";
+import {
+  CalendarJobError,
+  runCircleExecution,
+  type CircleExecution,
+} from "./appwriteExecution";
 import { ThemeGenerationError } from "../features/theme-errors";
 
 const requestId = "b5787232-3bba-456c-873b-f0d54e90bb63";
@@ -501,5 +505,400 @@ test("failed and malformed synchronous executions do not become empty successful
       ),
       /Function/,
     );
+  }
+});
+
+const calendarBody = {
+  kind: "analyzeCalendar",
+  circleId: "calendar-fixture",
+  requestId,
+  input: {
+    circleId: "calendar-fixture",
+    message: "Picnic on May 11, 2040 at 18:00 until 19:00, America/Chicago",
+    history: [],
+    referenceDate: "2040-05-01",
+    timeZone: "America/Chicago",
+  },
+};
+const calendarProposal = {
+  reply: "Review this picnic before saving.",
+  questions: [],
+  proposals: [
+    {
+      id: "picnic",
+      title: "Circle picnic",
+      description: "Bring lunch.",
+      location: "Town park",
+      startDate: "2040-05-11",
+      startTime: "18:00",
+      endDate: "2040-05-11",
+      endTime: "19:00",
+      timeZone: "America/Chicago",
+      startOffset: null,
+      endOffset: null,
+      issues: [],
+    },
+  ],
+};
+const calendarEnvelope = (extra: Record<string, unknown> = {}) => ({
+  circleId: calendarBody.circleId,
+  requestId,
+  status: "ready",
+  proposal: calendarProposal,
+  ...extra,
+});
+function calendarFixture(
+  options: {
+    capabilities?: () => CircleExecution | Promise<CircleExecution>;
+    dispatch?: () => CircleExecution | Promise<CircleExecution>;
+    result?: () => CircleExecution | Promise<CircleExecution>;
+  } = {},
+) {
+  const calls: {
+    kind: string;
+    async: boolean;
+    requestId?: string;
+    circleId?: string;
+  }[] = [];
+  const service = {
+    createExecution: async (input: { body: string; async: boolean }) => {
+      const request = JSON.parse(input.body);
+      calls.push({
+        kind: request.kind,
+        async: input.async,
+        requestId: request.requestId,
+        circleId: request.circleId,
+      });
+      if (request.kind === "calendarCapabilities") {
+        assert.equal(input.async, false);
+        return options.capabilities
+          ? options.capabilities()
+          : completed({ model: "gpt-6-luna", enabled: true, version: 2 });
+      }
+      assert.equal(request.circleId, calendarBody.circleId);
+      assert.equal(request.requestId, requestId);
+      if (request.kind === "analyzeCalendar") {
+        assert.equal(input.async, true);
+        assert.deepEqual(request.input, calendarBody.input);
+        return options.dispatch ? options.dispatch() : asyncExecution;
+      }
+      assert.equal(request.kind, "calendarResult");
+      assert.equal(input.async, false);
+      return options.result ? options.result() : completed(calendarEnvelope());
+    },
+    getExecution: async () => {
+      throw new Error("async execution history/body is not a calendar result");
+    },
+  };
+  return { calls, service };
+}
+const calendarError = (code: CalendarJobError["code"]) => (cause: unknown) =>
+  cause instanceof CalendarJobError && cause.code === code;
+
+test("calendar requires the enabled pinned model and matching review contract before async dispatch", async () => {
+  for (const capabilities of [
+    completed({ error: "Invalid Circle request." }, 400),
+    completed({ model: "another-model", enabled: true, version: 2 }),
+    completed({ model: "gpt-6-luna", enabled: false, version: 2 }),
+    completed({ model: "gpt-6-luna", enabled: true }),
+  ]) {
+    const h = calendarFixture({ capabilities: () => capabilities });
+    await assert.rejects(
+      runCircleExecution(h.service, {
+        functionId: "circle",
+        body: calendarBody,
+      }),
+      calendarError("calendar_backend_update"),
+    );
+    assert.deepEqual(
+      h.calls.map((call) => call.kind),
+      ["calendarCapabilities"],
+    );
+  }
+});
+
+test("calendar ignores asynchronous bodies and returns only the matching durable result", async () => {
+  const h = calendarFixture({
+    dispatch: () => ({
+      ...asyncExecution,
+      responseBody: JSON.stringify({
+        data: calendarEnvelope({ circleId: "wrong-circle" }),
+      }),
+    }),
+  });
+  const value = await runCircleExecution(h.service, {
+    functionId: "circle",
+    body: calendarBody,
+  });
+  assert.deepEqual(value, calendarEnvelope());
+  assert.deepEqual(
+    h.calls.map((call) => [call.kind, call.async]),
+    [
+      ["calendarCapabilities", false],
+      ["analyzeCalendar", true],
+      ["calendarResult", false],
+    ],
+  );
+});
+
+test("lost calendar dispatch replies poll the same durable request without another worker dispatch", async () => {
+  let polls = 0,
+    clock = 0;
+  const h = calendarFixture({
+    dispatch: () => {
+      throw new TypeError("Dispatch response lost after queueing");
+    },
+    result: () =>
+      completed(
+        calendarEnvelope(
+          ++polls === 1 ? { status: "processing", proposal: undefined } : {},
+        ),
+      ),
+  });
+  assert.deepEqual(
+    await runCircleExecution(h.service, {
+      functionId: "circle",
+      body: calendarBody,
+      now: () => clock,
+      pause: async (ms) => {
+        clock += ms;
+      },
+    }),
+    calendarEnvelope(),
+  );
+  assert.equal(
+    h.calls.filter((call) => call.kind === "analyzeCalendar").length,
+    1,
+  );
+  assert.ok(
+    h.calls.every((call) => !call.requestId || call.requestId === requestId),
+  );
+});
+
+test("calendar retries only temporary result reads, including a worker not yet claimed", async () => {
+  let polls = 0,
+    clock = 0;
+  const statuses = [404, 408, 409, 429, 503];
+  const h = calendarFixture({
+    result: () => {
+      const status = statuses[polls++];
+      if (status)
+        return completed({ error: "Temporary calendar read." }, status);
+      if (polls === statuses.length + 1)
+        throw new TypeError("Network interrupted");
+      return completed(calendarEnvelope());
+    },
+  });
+  assert.deepEqual(
+    await runCircleExecution(h.service, {
+      functionId: "circle",
+      body: calendarBody,
+      now: () => clock,
+      pause: async (ms) => {
+        clock += ms;
+      },
+    }),
+    calendarEnvelope(),
+  );
+  assert.equal(polls, 7);
+  assert.equal(
+    h.calls.filter((call) => call.kind === "analyzeCalendar").length,
+    1,
+  );
+});
+
+test("calendar timeout is resumable with the exact request ID and never invents a new paid claim", async () => {
+  let clock = 0,
+    polls = 0;
+  const claims = new Set<string>();
+  const h = calendarFixture({
+    dispatch: () => {
+      claims.add(requestId);
+      return asyncExecution;
+    },
+    result: () =>
+      completed(
+        calendarEnvelope(
+          ++polls <= 2 ? { status: "processing", proposal: undefined } : {},
+        ),
+      ),
+  });
+  const options = {
+    functionId: "circle",
+    body: calendarBody,
+    now: () => clock,
+    pause: async (ms: number) => {
+      clock += ms;
+    },
+    timeoutMs: 2000,
+  };
+  await assert.rejects(
+    runCircleExecution(h.service, options),
+    calendarError("calendar_pending"),
+  );
+  assert.deepEqual(
+    await runCircleExecution(h.service, options),
+    calendarEnvelope(),
+  );
+  assert.equal(claims.size, 1);
+  assert.equal(
+    h.calls.filter((call) => call.kind === "analyzeCalendar").length,
+    2,
+    "explicit retry may redispatch the same claim only",
+  );
+  assert.ok(
+    h.calls.every((call) => !call.requestId || call.requestId === requestId),
+  );
+});
+
+test("terminal calendar failure is explicit and cannot automatically start another paid request", async () => {
+  const h = calendarFixture({
+    result: () =>
+      completed(
+        calendarEnvelope({
+          status: "failed",
+          proposal: undefined,
+          error:
+            "The source was unreadable. Start a new analysis to try again.",
+        }),
+      ),
+  });
+  await assert.rejects(
+    runCircleExecution(h.service, { functionId: "circle", body: calendarBody }),
+    calendarError("calendar_terminal"),
+  );
+  assert.equal(h.calls.length, 3);
+});
+
+test("calendar authentication failures stop preflight or result polling immediately", async () => {
+  for (const status of [401, 403]) {
+    const preflight = calendarFixture({
+      capabilities: () =>
+        completed({ error: "Membership unavailable." }, status),
+    });
+    await assert.rejects(
+      runCircleExecution(preflight.service, {
+        functionId: "circle",
+        body: calendarBody,
+      }),
+    );
+    assert.equal(preflight.calls.length, 1);
+    const result = calendarFixture({
+      result: () => completed({ error: "Membership revoked." }, status),
+    });
+    await assert.rejects(
+      runCircleExecution(result.service, {
+        functionId: "circle",
+        body: calendarBody,
+      }),
+    );
+    assert.equal(result.calls.length, 3);
+  }
+});
+
+test("hung calendar preflight, dispatch and result reads all have a real deadline", async () => {
+  for (const step of ["capabilities", "dispatch", "result"] as const) {
+    const h = calendarFixture({
+      [step]: () => new Promise<CircleExecution>(() => {}),
+    });
+    const started = Date.now();
+    await assert.rejects(
+      runCircleExecution(h.service, {
+        functionId: "circle",
+        body: calendarBody,
+        timeoutMs: 25,
+        pause: async () => {},
+      }),
+      calendarError("calendar_pending"),
+    );
+    assert.ok(Date.now() - started < 1000);
+  }
+});
+
+test("calendar rejects stale Circle/request results and malformed or incomplete proposals", async () => {
+  for (const value of [
+    calendarEnvelope({ circleId: "another-circle" }),
+    calendarEnvelope({ requestId: "78233398-7c82-4a92-b96e-586e708e837d" }),
+    calendarEnvelope({
+      proposal: { ...calendarProposal, secret: "not-an-event-field" },
+    }),
+    calendarEnvelope({ proposal: undefined }),
+    calendarEnvelope({ status: "unexpected" }),
+    calendarEnvelope({ status: "saved", receipt: { ok: false } }),
+  ]) {
+    const h = calendarFixture({ result: () => completed(value) });
+    await assert.rejects(
+      runCircleExecution(h.service, {
+        functionId: "circle",
+        body: calendarBody,
+      }),
+      calendarError("calendar_backend_update"),
+    );
+    assert.equal(h.calls.length, 3);
+  }
+});
+
+test("calendar saved receipts resolve unchanged without exposing an async execution body", async () => {
+  const saved = calendarEnvelope({
+    status: "saved",
+    proposal: undefined,
+    receipt: { ok: true, created: 1, skipped: 0, eventIds: ["event-fixture"] },
+  });
+  const h = calendarFixture({ result: () => completed(saved) });
+  assert.deepEqual(
+    await runCircleExecution(h.service, {
+      functionId: "circle",
+      body: calendarBody,
+    }),
+    JSON.parse(JSON.stringify(saved)),
+  );
+});
+
+test("calendar requests from separate account services never share source or result state", async () => {
+  const first = calendarFixture({
+    result: () =>
+      completed(
+        calendarEnvelope({
+          proposal: { ...calendarProposal, reply: "Account A's local source" },
+        }),
+      ),
+  });
+  const second = calendarFixture({
+    result: () =>
+      completed(
+        calendarEnvelope({
+          proposal: { ...calendarProposal, reply: "Account B's local source" },
+        }),
+      ),
+  });
+  const [a, b] = await Promise.all(
+    [first, second].map((h) =>
+      runCircleExecution<{ proposal: { reply: string } }>(h.service, {
+        functionId: "circle",
+        body: calendarBody,
+      }),
+    ),
+  );
+  assert.equal(a.proposal.reply, "Account A's local source");
+  assert.equal(b.proposal.reply, "Account B's local source");
+  assert.equal(first.calls.length, 3);
+  assert.equal(second.calls.length, 3);
+});
+
+test("malformed calendar request IDs and mismatched input Circles fail before dispatch", async () => {
+  for (const body of [
+    { ...calendarBody, requestId: undefined },
+    { ...calendarBody, requestId: "not-a-uuid" },
+    {
+      ...calendarBody,
+      input: { ...calendarBody.input, circleId: "another-circle" },
+    },
+  ]) {
+    const h = calendarFixture();
+    await assert.rejects(
+      runCircleExecution(h.service, { functionId: "circle", body }),
+      calendarError("calendar_backend_update"),
+    );
+    assert.equal(h.calls.length, 0);
   }
 });

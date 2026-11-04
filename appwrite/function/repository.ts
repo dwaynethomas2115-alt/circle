@@ -1,3 +1,4 @@
+import { calendarJobKey, type CalendarJob } from "./calendar-ai";
 import { randomUUID, createHash } from "node:crypto";
 import { Query, type TablesDB } from "node-appwrite";
 import {
@@ -114,7 +115,6 @@ export class Repository {
     if (request.kind === "themeWallpaper")
       return [request.wallpaperPath.split("/")[0]];
     if ("circleId" in request) return [request.circleId];
-    if (request.kind === "importCalendar") return [request.input.circleId];
     if (!("action" in request)) return [];
     const a = request.action;
     if ("circleId" in a) return [a.circleId];
@@ -229,7 +229,7 @@ export class Repository {
     }
     // Imports compare all events in the selected Circle, including events outside
     // the recent feature projection. Circle transaction guards serialize imports.
-    if (request.kind === "importCalendar")
+    if (request.kind === "saveCalendar")
       await load("events", "scope_id", scopes);
     if (features) {
       await Promise.all([
@@ -401,6 +401,15 @@ export class Repository {
     store.proposals = Object.fromEntries(
       (rows.get("ai_proposals") || []).map((r) => [r.actor_id, parse(r)]),
     ) as Store["proposals"];
+    if (
+      request.kind === "analyzeCalendar" ||
+      request.kind === "calendarResult" ||
+      request.kind === "saveCalendar"
+    ) {
+      const key = calendarJobKey(identity.$id, request.requestId);
+      const row = await get("calendar_imports", key);
+      store.calendarJobs = row ? { [key]: parse(row) as CalendarJob } : {};
+    }
     return store;
   }
   async persist(

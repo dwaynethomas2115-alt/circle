@@ -27,6 +27,7 @@
     "expo": "~54.0.38",
     "expo-asset": "~12.0.12",
     "expo-constants": "~18.0.13",
+    "expo-crypto": "~15.0.9",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",
     "expo-font": "~14.0.12",
@@ -57,6 +58,7 @@
     "eslint-config-expo": "~10.0.0",
     "node-appwrite": "^31.1.0",
     "prettier": "^3.9.10",
+    "sharp": "^0.34.5",
     "tsx": "^4.21.0",
     "typescript": "~5.9.2",
     "zod": "^4.6.7"

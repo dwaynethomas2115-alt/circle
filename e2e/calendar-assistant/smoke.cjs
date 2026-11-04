@@ -63,19 +63,28 @@ async function scenario(
     holdAnalysis = false,
     failAnalysis = false,
     lostImportResponse = false,
+    lostAnalysisDispatch = false,
+    wrongSaveReceipt = false,
+    oldBackend = false,
+    capabilityModel = "gpt-6-luna",
+    capabilityEnabled = true,
     otherCircle = false,
   } = {},
 ) {
   const h = await fixture(browser, { width, posts: 1, latency: 15 });
   if (otherCircle) h.addOtherCircle();
   const counts = { analysis: 0, imports: 0, manual: 0 };
+  const wireCounts = { capabilities: 0, dispatches: 0, polls: 0 };
   const inputs = [],
     imports = [],
-    calendarEvents = [];
+    calendarEvents = [],
+    dispatches = [];
+  const jobs = new Map();
   const waiting = hold();
   let closed = false;
   let analysisFailure = failAnalysis;
   let importResponseLost = lostImportResponse;
+  let dispatchResponseLost = lostAnalysisDispatch;
   const cors = {
     "access-control-allow-origin": base,
     "access-control-allow-credentials": "true",
@@ -102,39 +111,129 @@ async function scenario(
         ),
       }),
     });
+  const queued = (route) =>
+    route.fulfill({
+      status: 200,
+      headers: cors,
+      body: JSON.stringify({
+        $id: "mock-calendar-async",
+        status: "waiting",
+        responseStatusCode: 0,
+        // Async bodies must never be trusted as private analysis results.
+        responseBody: JSON.stringify({
+          data: response({ reply: "Never display an async execution body" }),
+        }),
+      }),
+    });
   await h.context.route(
     `${endpoint}/v1/functions/circle-api/executions`,
     async (route) => {
       const request = route.request();
       if (request.method() !== "POST") return route.fallback();
-      const input = JSON.parse(request.postDataJSON().body);
-      if (input.kind === "calendarAssistant") {
-        counts.analysis++;
-        inputs.push(clone(input));
-        waiting.start();
-        if (holdAnalysis) await waiting.promise;
-        if (closed) return;
-        if (analysisFailure) {
-          analysisFailure = false;
-          return execution(route, null, 503);
-        }
-        return execution(route, answer);
+      const outer = request.postDataJSON();
+      const input = JSON.parse(outer.body);
+      if (input.kind === "calendarCapabilities") {
+        wireCounts.capabilities++;
+        if (oldBackend) return execution(route, null, 400);
+        return execution(route, {
+          model: capabilityModel,
+          enabled: capabilityEnabled,
+          reviewContractVersion: 2,
+        });
       }
-      if (input.kind === "importCalendar") {
+      if (input.kind === "analyzeCalendar") {
+        assert.equal(
+          outer.async,
+          true,
+          "analysis must use asynchronous execution",
+        );
+        assert.equal(input.circleId, input.input.circleId);
+        assert.match(input.requestId, /^[0-9a-f-]{36}$/i);
+        wireCounts.dispatches++;
+        dispatches.push(clone(input));
+        let job = jobs.get(input.requestId);
+        if (job) {
+          assert.equal(
+            job.inputHash,
+            JSON.stringify(input.input),
+            "an unchanged request ID cannot bind another source",
+          );
+        } else {
+          counts.analysis++;
+          inputs.push(clone(input.input));
+          job = {
+            status: "processing",
+            circleId: input.circleId,
+            requestId: input.requestId,
+            inputHash: JSON.stringify(input.input),
+          };
+          jobs.set(input.requestId, job);
+          const finishAnalysis = () => {
+            if (closed) return;
+            if (analysisFailure) {
+              analysisFailure = false;
+              job.status = "failed";
+              job.error =
+                "Mock calendar analysis failed. Choose a new analysis for another paid attempt.";
+            } else {
+              job.status = "ready";
+              job.proposal = clone(answer);
+            }
+          };
+          waiting.start();
+          if (holdAnalysis) void waiting.promise.then(finishAnalysis);
+          else finishAnalysis();
+        }
+        if (dispatchResponseLost) {
+          dispatchResponseLost = false;
+          return route.abort("failed");
+        }
+        return queued(route);
+      }
+      if (input.kind === "calendarResult") {
+        wireCounts.polls++;
+        const job = jobs.get(input.requestId);
+        if (!job || job.circleId !== input.circleId)
+          return execution(route, null, 404);
+        const { inputHash: _inputHash, saveHash: _saveHash, ...result } = job;
+        return execution(route, result);
+      }
+      if (input.kind === "saveCalendar") {
         counts.imports++;
         imports.push(clone(input));
         assert.equal(
-          input.input.confirmed,
+          input.confirmed,
           true,
-          "only an explicitly confirmed import is accepted by the mock",
+          "an import needs final confirmation",
         );
-        assert.equal(input.input.circleId, "family");
+        assert.equal(input.circleId, "family");
+        assert.ok(
+          input.events.every((event) => event.reviewed === true),
+          "every saved event needs individual review",
+        );
+        const job = jobs.get(input.requestId);
+        assert.ok(
+          job,
+          "the reviewed source must have a durable analysis claim",
+        );
+        const saveHash = JSON.stringify(input.events);
+        if (job.status === "saved") {
+          assert.equal(
+            job.saveHash,
+            saveHash,
+            "a saved claim cannot accept a changed batch",
+          );
+          const { inputHash: _inputHash, saveHash: _saveHash, ...result } = job;
+          return execution(route, result);
+        }
+        assert.equal(job.status, "ready");
         let created = 0;
         const eventIds = [];
-        for (const event of input.input.events) {
+        for (const { reviewed: _reviewed, ...event } of input.events) {
+          const normalized = (v) => v.trim().toLowerCase().replace(/\s+/g, " ");
           const key = JSON.stringify([
-            event.title.trim().toLowerCase(),
-            event.location.trim().toLowerCase(),
+            normalized(event.title),
+            normalized(event.location),
             event.startsAt,
             event.endsAt,
           ]);
@@ -143,7 +242,7 @@ async function scenario(
             saved = {
               ...event,
               id: `calendar-event-${calendarEvents.length + 1}`,
-              circleId: input.input.circleId,
+              circleId: input.circleId,
               authorId: "alex",
               createdAt: new Date().toISOString(),
               mockKey: key,
@@ -153,16 +252,26 @@ async function scenario(
           }
           eventIds.push(saved.id);
         }
+        job.status = "saved";
+        job.saveHash = saveHash;
+        job.receipt = {
+          ok: true,
+          created,
+          skipped: input.events.length - created,
+          eventIds,
+        };
+        delete job.proposal;
         if (importResponseLost) {
           importResponseLost = false;
           return execution(route, null, 503);
         }
-        return execution(route, {
-          ok: true,
-          created,
-          skipped: input.input.events.length - created,
-          eventIds,
-        });
+        const { inputHash: _inputHash, saveHash: _saveHash, ...result } = job;
+        return execution(
+          route,
+          wrongSaveReceipt
+            ? { ...result, circleId: "different-circle" }
+            : result,
+        );
       }
       if (
         input.kind === "featureAction" &&
@@ -178,17 +287,18 @@ async function scenario(
         });
         return execution(route, { ok: true, id: "manual-event" });
       }
-      if (input.kind === "features") {
+      if (input.kind === "features")
         return execution(route, {
           version: 1,
           polls: [],
           votes: [],
           rsvps: [],
           readStates: [],
-          events: calendarEvents.map(({ mockKey, ...event }) => event),
+          events: calendarEvents.map(
+            ({ mockKey: _mockKey, ...event }) => event,
+          ),
           themes: { family: clone(original.theme) },
         });
-      }
       return route.fallback();
     },
   );
@@ -196,12 +306,16 @@ async function scenario(
   await expect(
     h.page.getByRole("button", { name: "Calendar AI", exact: true }),
   ).toBeVisible();
+  await expect(h.page.getByTestId("circle-wallpaper-frame")).toBeVisible();
+  await delay(250); // Settle initial route motion and decoration before clicking.
   return {
     ...h,
     inputs,
     imports,
     calendarEvents,
     calendarCounts: counts,
+    wireCounts,
+    dispatches,
     waiting,
     finish: async (name, details = {}) => {
       assert.equal(h.counts.mutations, 0);
@@ -212,10 +326,17 @@ async function scenario(
       assert.deepEqual(storage, { local: 0, session: 0 });
       const report = await h.finish(name, {
         calendarCounts: clone(counts),
+        wireCounts: clone(wireCounts),
         ...details,
       });
       closed = true;
-      const row = { name, width, calendarCounts: clone(counts), ...details };
+      const row = {
+        name,
+        width,
+        calendarCounts: clone(counts),
+        wireCounts: clone(wireCounts),
+        ...details,
+      };
       const prior = reports.findIndex((value) => value.name === name);
       if (prior >= 0) reports[prior] = row;
       else reports.push(row);
@@ -304,6 +425,99 @@ async function attachText(
         },
       ]),
       [
+        "lost async dispatch response resumes the same durable analysis without another provider attempt",
+        async () => {
+          const h = await scenario(browser, { lostAnalysisDispatch: true });
+          await open(h);
+          await analyze(h);
+          assert.equal(h.wireCounts.capabilities, 1);
+          assert.equal(h.wireCounts.dispatches, 1);
+          assert.equal(h.calendarCounts.analysis, 1);
+          assert.ok(h.wireCounts.polls >= 1);
+          assert.equal(h.calendarCounts.imports, 0);
+          await expect(
+            h.page.getByText("Never display an async execution body", {
+              exact: true,
+            }),
+          ).toHaveCount(0);
+          await h.finish(
+            "lost async dispatch response resumes the same durable analysis without another provider attempt",
+          );
+        },
+      ],
+      [
+        "an uncertain analysis retry retains its request UUID and never starts a second provider attempt",
+        async () => {
+          const h = await scenario(browser, { holdAnalysis: true });
+          await open(h);
+          await h.page.clock.install({ time: new Date() });
+          await h.page
+            .getByRole("textbox", { name: "Calendar message", exact: true })
+            .fill("Keep this pending request unchanged.");
+          await h.page
+            .getByRole("button", { name: "Propose events", exact: true })
+            .click();
+          await h.waiting.started;
+          await expect.poll(() => h.wireCounts.polls).toBeGreaterThan(0);
+          await h.page.clock.fastForward(121000);
+          await expect(
+            h.page.getByRole("button", {
+              name: "Check existing analysis",
+              exact: true,
+            }),
+          ).toBeEnabled();
+          assert.equal(h.calendarCounts.analysis, 1);
+          h.waiting.release();
+          await h.page
+            .getByRole("button", {
+              name: "Check existing analysis",
+              exact: true,
+            })
+            .click();
+          await expect(h.page.getByTestId("calendar-proposal-0")).toBeVisible();
+          assert.equal(h.wireCounts.dispatches, 2);
+          assert.equal(h.calendarCounts.analysis, 1);
+          assert.equal(h.dispatches[0].requestId, h.dispatches[1].requestId);
+          await h.finish(
+            "an uncertain analysis retry retains its request UUID and never starts a second provider attempt",
+          );
+        },
+      ],
+      ...[
+        ["old backend", { oldBackend: true }],
+        ["alternate model", { capabilityModel: "unapproved-model" }],
+        ["disabled backend", { capabilityEnabled: false }],
+      ].map(([label, options]) => [
+        `capability preflight rejects ${label} before transmitting analysis source`,
+        async () => {
+          const h = await scenario(browser, options);
+          await open(h);
+          await h.page
+            .getByRole("textbox", { name: "Calendar message", exact: true })
+            .fill("Do not send this to an incompatible backend.");
+          await h.page
+            .getByRole("button", {
+              name: /^(?:Propose events|Check existing analysis)$/,
+              exact: true,
+            })
+            .click();
+          await expect.poll(() => h.wireCounts.capabilities).toBe(1);
+          await expect(
+            h.page.getByRole("button", {
+              name: /^(?:Propose events|Check existing analysis)$/,
+              exact: true,
+            }),
+          ).toBeEnabled();
+          await delay(100);
+          assert.equal(h.wireCounts.dispatches, 0);
+          assert.equal(h.calendarCounts.analysis, 0);
+          assert.equal(h.calendarCounts.imports, 0);
+          await h.finish(
+            `capability preflight rejects ${label} before transmitting analysis source`,
+          );
+        },
+      ]),
+      [
         "typed proposal requires reviewed fields and explicit final confirmation",
         async () => {
           const h = await scenario(browser);
@@ -352,7 +566,7 @@ async function attachText(
           assert.equal(h.calendarCounts.imports, 1);
           assert.equal(h.calendarEvents.length, 1);
           assert.equal(
-            h.imports[0].input.events[0].startsAt,
+            h.imports[0].events[0].startsAt,
             `${date}T23:00:00.000Z`,
           );
           await h.finish(
@@ -572,7 +786,7 @@ async function attachText(
         },
       ],
       [
-        "provider failure keeps input and requires an explicit retry",
+        "terminal provider failure requires an explicit new analysis before another paid attempt",
         async () => {
           const h = await scenario(browser, { failAnalysis: true });
           await open(h);
@@ -585,8 +799,11 @@ async function attachText(
             .click();
           await expect.poll(() => h.calendarCounts.analysis).toBe(1);
           await expect(
-            h.page.getByRole("button", { name: "Propose events", exact: true }),
-          ).toBeEnabled();
+            h.page.getByRole("button", {
+              name: "New analysis (may incur a charge)",
+              exact: true,
+            }),
+          ).toBeVisible();
           await delay(150);
           assert.equal(h.calendarCounts.analysis, 1);
           await expect(
@@ -595,18 +812,63 @@ async function attachText(
               exact: true,
             }),
           ).toHaveValue(text);
+          await expect(
+            h.page.getByRole("button", { name: "Propose events", exact: true }),
+          ).toBeDisabled();
+          await h.page
+            .getByRole("button", {
+              name: "New analysis (may incur a charge)",
+              exact: true,
+            })
+            .click();
+          assert.equal(
+            h.calendarCounts.analysis,
+            1,
+            "resetting a failed attempt must not dispatch work",
+          );
           await h.page
             .getByRole("button", { name: "Propose events", exact: true })
             .click();
           await expect(h.page.getByTestId("calendar-proposal-0")).toBeVisible();
           assert.equal(h.calendarCounts.analysis, 2);
+          assert.notEqual(h.dispatches[0].requestId, h.dispatches[1].requestId);
           await h.finish(
-            "provider failure keeps input and requires an explicit retry",
+            "terminal provider failure requires an explicit new analysis before another paid attempt",
           );
         },
       ],
       [
-        "retry after a lost import response skips the already created event",
+        "a mismatched save receipt is rejected without clearing the reviewed proposal",
+        async () => {
+          const h = await scenario(browser, { wrongSaveReceipt: true });
+          await open(h);
+          await analyze(h);
+          await review(h);
+          await h.page
+            .getByRole("button", {
+              name: /^Confirm save 1 events?$/,
+              exact: true,
+            })
+            .click();
+          await expect.poll(() => h.calendarCounts.imports).toBe(1);
+          await expect(
+            h.page.getByTestId("calendar-import-confirmation"),
+          ).toHaveCount(0);
+          await expect(h.page.getByTestId("calendar-proposal-0")).toBeVisible();
+          await expect(
+            h.page.getByText(/receipt for a different calendar request/),
+          ).toBeVisible();
+          await expect(h.page.getByText(/^1 event added\./)).toHaveCount(0);
+          // The synthetic server already committed. This verifies receipt
+          // rejection, not that the remote write never occurred.
+          assert.equal(h.calendarEvents.length, 1);
+          await h.finish(
+            "a mismatched save receipt is rejected without clearing the reviewed proposal",
+          );
+        },
+      ],
+      [
+        "retry after a lost import response returns its durable save receipt without duplicate events",
         async () => {
           const h = await scenario(browser, { lostImportResponse: true });
           await open(h);
@@ -634,12 +896,15 @@ async function attachText(
           await expect.poll(() => h.calendarCounts.imports).toBe(2);
           await delay(150);
           assert.equal(h.calendarEvents.length, 1);
-          assert.deepEqual(
-            h.imports[0].input.events,
-            h.imports[1].input.events,
+          assert.deepEqual(h.imports[0].events, h.imports[1].events);
+          assert.equal(h.imports[0].requestId, h.imports[1].requestId);
+          assert.ok(
+            h.imports.every((wire) =>
+              wire.events.every((event) => event.reviewed === true),
+            ),
           );
           await h.finish(
-            "retry after a lost import response skips the already created event",
+            "retry after a lost import response returns its durable save receipt without duplicate events",
           );
         },
       ],
@@ -671,7 +936,7 @@ async function attachText(
             ).toBeVisible();
           }
           h.waiting.release();
-          await delay(150);
+          await delay(1800);
           await expect(h.page.getByTestId("calendar-proposal-0")).toHaveCount(
             0,
           );

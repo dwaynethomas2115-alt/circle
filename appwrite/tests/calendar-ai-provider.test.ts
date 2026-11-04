@@ -71,24 +71,17 @@ const safeFailure = (cause: unknown) => {
   return true;
 };
 
-test("calendar AI is disabled without an explicitly selected model and never calls a provider fallback", async () => {
+test("calendar AI is enabled on pinned Luna without model settings or fallback", async () => {
   const h = harness();
-  await assert.rejects(
-    analyzeCalendar(input(), serverKey, undefined, h.transport),
-    (cause: unknown) => {
-      assert.ok(cause instanceof CalendarAIError);
-      assert.equal(cause.status, 503);
-      assert.equal(cause.code, "calendar_ai_disabled");
-      return true;
-    },
-  );
-  assert.equal(h.calls.length, 0);
+  await analyzeCalendar(input(), serverKey, h.transport);
+  assert.equal(h.calls[0].body.model, "gpt-6-luna");
+  assert.equal(h.calls.length, 1);
 });
 
 test("calendar provider uses a bounded structured JSON request without tools or writable calendar access", async () => {
   const h = harness();
   assert.deepEqual(
-    await analyzeCalendar(input(), serverKey, model, h.transport),
+    await analyzeCalendar(input(), serverKey, h.transport),
     result(),
   );
   assert.equal(h.calls.length, 1);
@@ -132,7 +125,7 @@ test("uploaded text instructions remain untrusted user data and cannot introduce
     { role: "user", content: "Help me read this calendar." },
     { role: "assistant", content: "I can propose events for review." },
   ];
-  await analyzeCalendar(request, serverKey, model, h.transport);
+  await analyzeCalendar(request, serverKey, h.transport);
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].url, "https://api.openai.com/v1/chat/completions");
   const messages = h.calls[0].body.messages as {
@@ -170,7 +163,7 @@ test("a supported calendar image is sent inline as JPEG data, never fetched from
     dataUrl: `data:image/jpeg;base64,${image.toString("base64")}`,
   };
   const h = harness();
-  await analyzeCalendar(request, serverKey, model, h.transport);
+  await analyzeCalendar(request, serverKey, h.transport);
   assert.equal(h.calls.length, 1);
   const encoded = JSON.stringify(h.calls[0].body.messages);
   assert.match(encoded, /image_url/);
@@ -195,7 +188,6 @@ test("missing or unclear date fields are returned for review without invented da
     await analyzeCalendar(
       { ...input(), message: "Lunch March 1" },
       serverKey,
-      model,
       h.transport,
     ),
     unclear,
@@ -224,7 +216,7 @@ test("unsupported documents, external image URLs, and oversized sources fail bef
   ]) {
     const h = harness();
     await assert.rejects(
-      analyzeCalendar({ ...input(), source }, serverKey, model, h.transport),
+      analyzeCalendar({ ...input(), source }, serverKey, h.transport),
       safeFailure,
     );
     assert.equal(h.calls.length, 0);
@@ -254,7 +246,7 @@ test("malformed, extra-field, and oversized model results never escape the provi
       json({ choices: [{ message: { content: JSON.stringify(value) } }] }),
     );
     await assert.rejects(
-      analyzeCalendar(input(), serverKey, model, h.transport),
+      analyzeCalendar(input(), serverKey, h.transport),
       safeFailure,
     );
     assert.equal(h.calls.length, 1);
@@ -266,7 +258,7 @@ test("malformed, extra-field, and oversized model results never escape the provi
   ]) {
     const h = harness(() => json({ choices: [{ message }] }));
     await assert.rejects(
-      analyzeCalendar(input(), serverKey, model, h.transport),
+      analyzeCalendar(input(), serverKey, h.transport),
       safeFailure,
     );
   }
@@ -281,7 +273,7 @@ test("provider authentication, rate, and server errors are sanitized and never r
       ),
     );
     await assert.rejects(
-      analyzeCalendar(input(), serverKey, model, h.transport),
+      analyzeCalendar(input(), serverKey, h.transport),
       safeFailure,
     );
     assert.equal(h.calls.length, 1);
@@ -298,9 +290,33 @@ test("network and timeout failures expose no raw provider details or key", async
       throw cause;
     });
     await assert.rejects(
-      analyzeCalendar(input(), serverKey, model, h.transport),
+      analyzeCalendar(input(), serverKey, h.transport),
       safeFailure,
     );
     assert.equal(h.calls.length, 1);
   }
+});
+
+test("a JPEG header alone is not sufficient: full image decoding precedes any provider charge", async () => {
+  const fake = Buffer.from([
+    255, 216, 255, 192, 0, 17, 8, 0, 10, 0, 10, 3, 1, 17, 0, 2, 17, 1, 3, 17, 1,
+    255, 217,
+  ]);
+  const h = harness();
+  await assert.rejects(
+    analyzeCalendar(
+      {
+        ...input(),
+        source: {
+          kind: "image",
+          name: "calendar.jpg",
+          dataUrl: `data:image/jpeg;base64,${fake.toString("base64")}`,
+        },
+      },
+      serverKey,
+      h.transport,
+    ),
+    safeFailure,
+  );
+  assert.equal(h.calls.length, 0);
 });

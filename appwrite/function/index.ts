@@ -10,7 +10,12 @@ import {
 import { hydrateMedia, sealUpload, type MediaServices } from "./media";
 import { requestSchema } from "./schema";
 import { generateTheme, AIError } from "./ai";
-import { analyzeCalendar, CalendarAIError } from "./calendar-ai";
+import {
+  analyzeCalendar,
+  CalendarAIError,
+  finishCalendar,
+} from "./calendar-ai";
+import type { CalendarJobResult } from "../../src/features/calendarJobs";
 import {
   CALENDAR_LIMITS,
   validateCalendarAnalysisInput,
@@ -23,7 +28,7 @@ import {
   assertWallpaperStorage,
   type WallpaperServices,
 } from "./wallpaper";
-import { Repository, type Database } from "./repository";
+import { Repository, type Database, type Request } from "./repository";
 import type { AppState, Result } from "../../src/types";
 export interface Context {
   req: { headers: Record<string, string | undefined>; bodyJson: unknown };
@@ -38,8 +43,6 @@ export interface Dependencies {
   analyzeCalendar?: typeof analyzeCalendar;
   db: Database;
 }
-// A process-local overlapping-request guard, not a durable quota or billing cap.
-const activeCalendarRequests = new Set<string>();
 export default async function main(
   { req, res, error }: Context,
   injected?: Dependencies,
@@ -83,7 +86,7 @@ export default async function main(
     const isCalendarAnalysis =
       req.bodyJson &&
       typeof req.bodyJson === "object" &&
-      (req.bodyJson as { kind?: unknown }).kind === "calendarAssistant";
+      (req.bodyJson as { kind?: unknown }).kind === "analyzeCalendar";
     if (
       Buffer.byteLength(JSON.stringify(req.bodyJson) || "") >
       (isCalendarAnalysis ? CALENDAR_LIMITS.maxRequestBytes : 24000)
@@ -95,50 +98,73 @@ export default async function main(
         "Invalid Circle request. Please check the fields and attachment format.",
       );
     const request = parsed.data;
-    if (request.kind === "calendarAssistant") {
-      // Membership comes before model configuration or provider work. Recheck it
-      // after inference too: a removed member receives no late proposals.
-      await repository.read(identity, request);
-      const { kind: _kind, ...input } = request;
-      const problem = validateCalendarAnalysisInput(input);
-      if (problem) throw new CalendarAIError(problem);
-      const model = process.env.OPENAI_CALENDAR_MODEL;
-      if (!model?.trim())
+    if (request.kind === "calendarCapabilities") {
+      const result = await repository.read(identity, request);
+      if (!process.env.OPENAI_API_KEY)
         throw new CalendarAIError(
-          "Calendar AI is not enabled. The app owner must approve and configure its model first.",
+          "Calendar AI needs the existing server-side OpenAI connection checked by the app owner.",
           503,
-          "calendar_ai_disabled",
+          "calendar_ai_configuration",
         );
-      const scope = JSON.stringify([
-        endpoint,
-        project,
-        databaseId,
-        identity.$id,
-      ]);
-      if (activeCalendarRequests.has(scope))
+      return res.json({ data: result.data });
+    }
+    if (request.kind === "calendarResult")
+      return res.json({
+        data: (await repository.read(identity, request)).data,
+      });
+    if (request.kind === "analyzeCalendar") {
+      await repository.read(identity, {
+        kind: "calendarCapabilities",
+        circleId: request.circleId,
+      });
+      const problem = validateCalendarAnalysisInput(request.input);
+      if (problem) throw new CalendarAIError(problem);
+      if (!process.env.OPENAI_API_KEY)
         throw new CalendarAIError(
-          "Your calendar analysis is still running. Wait for it before sending another message.",
-          429,
-          "calendar_analysis_in_progress",
+          "Calendar AI needs the existing server-side OpenAI connection checked by the app owner.",
+          503,
+          "calendar_ai_configuration",
         );
-      activeCalendarRequests.add(scope);
+      const claimed = await repository.mutate(
+        identity,
+        request,
+        async (store) => execute(store, identity, request),
+      );
+      if (!(claimed.data as CalendarJobResult & { claimed?: boolean }).claimed)
+        return res.json({ data: claimed.data });
+      let proposal:
+        | import("../../src/features/calendarAssistant").CalendarAnalysisResult
+        | undefined;
+      let failure: string | undefined;
       try {
-        const proposals = await (injected?.analyzeCalendar ?? analyzeCalendar)(
-          input,
-          process.env.OPENAI_API_KEY || "",
-          model,
+        proposal = await (injected?.analyzeCalendar ?? analyzeCalendar)(
+          request.input,
+          process.env.OPENAI_API_KEY,
         );
-        if (!validateCalendarAnalysisResult(proposals))
+        if (
+          !validateCalendarAnalysisResult(proposal) ||
+          Buffer.byteLength(JSON.stringify(proposal)) > 24000
+        )
           throw new CalendarAIError(
-            "Calendar analysis returned invalid proposals. Nothing was added.",
+            "The calendar response was incomplete or oversized. Nothing was added; analyze a smaller source.",
             502,
             "calendar_provider_response",
           );
-        await repository.read(identity, request);
-        return res.json({ data: proposals });
-      } finally {
-        activeCalendarRequests.delete(scope);
+      } catch (cause) {
+        proposal = undefined;
+        failure =
+          cause instanceof CalendarAIError
+            ? cause.message
+            : "Calendar analysis could not finish. Start a new analysis only if you want a new paid attempt. No events were saved.";
       }
+      const completed = await completeCalendar(
+        repository,
+        identity,
+        request,
+        proposal,
+        failure,
+      );
+      return res.json({ data: completed.data });
     }
     if (request.kind === "prepareTheme" && !process.env.OPENAI_API_KEY)
       throw new ThemeError(
@@ -400,4 +426,49 @@ function themeFailure(cause: unknown): ThemeFailure {
     code: "theme_generation_failed",
     responseStatus: 502,
   };
+}
+
+/** Retry only a confirmed database conflict, never inference. Recheck membership in
+ * each transaction; an uncertain commit is read back before reporting failure. */
+export async function completeCalendar(
+  repository: Repository,
+  identity: Identity,
+  request: Extract<Request, { kind: "analyzeCalendar" }>,
+  proposal?: import("../../src/features/calendarAssistant").CalendarAnalysisResult,
+  error?: string,
+) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await repository.mutate(identity, request, async (store) =>
+        finishCalendar(
+          store,
+          identity,
+          request.circleId,
+          request.requestId,
+          proposal,
+          error,
+        ),
+      );
+    } catch (cause) {
+      if ((cause as { code?: number }).code === 409 && attempt < 2) {
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, (attempt + 1) * 100),
+        );
+        continue;
+      }
+      try {
+        const observed = await repository.read(identity, {
+          kind: "calendarResult",
+          circleId: request.circleId,
+          requestId: request.requestId,
+        });
+        const result = observed.data as CalendarJobResult;
+        if (["ready", "saved", "failed"].includes(result.status))
+          return observed;
+      } catch {
+        /* Preserve the original failure; a read cannot authorize a write. */
+      }
+      throw cause;
+    }
+  }
 }

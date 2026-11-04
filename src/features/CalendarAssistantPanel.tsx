@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { randomUUID } from "expo-crypto";
 import {
   Image,
   Modal,
@@ -153,6 +154,12 @@ function CalendarAssistantSession({
   const [questions, setQuestions] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<"file" | "analysis" | "save" | null>(null);
+  const analysis = useRef<{ key: string; id: string } | null>(null);
+  const [analysisRequestId, setAnalysisRequestId] = useState<string | null>(
+    null,
+  );
+  const [analysisTerminal, setAnalysisTerminal] = useState(false);
+  const [analysisPending, setAnalysisPending] = useState(false);
   const [confirmation, setConfirmation] = useState<
     CalendarImportEvent[] | null
   >(null);
@@ -165,6 +172,7 @@ function CalendarAssistantSession({
     return () => {
       mounted.current = false;
       operation.current = null;
+      analysis.current = null;
     };
   }, []);
   function allowed() {
@@ -190,7 +198,22 @@ function CalendarAssistantSession({
     setConfirmation(null);
     setRows((previous) => previous.map((row) => ({ ...row, reviewed: false })));
   }
+  function invalidateAnalysisInput() {
+    analysis.current = null;
+    setAnalysisRequestId(null);
+    setAnalysisTerminal(false);
+    setAnalysisPending(false);
+    invalidateReview();
+    if (rows.length)
+      setNotice(
+        "Your analysis input changed. Choose Propose events again before saving these proposals.",
+      );
+  }
   function clearSourceAnalysis() {
+    analysis.current = null;
+    setAnalysisRequestId(null);
+    setAnalysisTerminal(false);
+    setAnalysisPending(false);
     setRows([]);
     setQuestions([]);
     setHistory([]);
@@ -236,16 +259,25 @@ function CalendarAssistantSession({
       setNotice(problem);
       return;
     }
+    if (analysisTerminal) return;
     const id = start("analysis");
     if (id === null) return;
+    const key = JSON.stringify(input);
+    if (analysis.current?.key !== key)
+      analysis.current = { key, id: randomUUID() };
+    const requestId = analysis.current.id;
+    setAnalysisRequestId(null);
     invalidateReview();
     try {
-      const result = await actions.analyzeCalendar(input);
+      const result = await actions.analyzeCalendar(input, requestId);
       if (!current(id)) return;
       if (!validateCalendarAnalysisResult(result))
         throw new Error(
           "The calendar assistant returned an invalid proposal. Nothing was saved.",
         );
+      setAnalysisRequestId(requestId);
+      setAnalysisPending(false);
+      setAnalysisTerminal(false);
       const reply = [result.reply, ...result.questions].join("\n");
       setHistory((previous) =>
         [
@@ -281,12 +313,16 @@ function CalendarAssistantSession({
           "No events were found. Add clearer dates, times, and a timezone, or try a clearer photo.",
         );
     } catch (cause) {
-      if (current(id))
+      if (current(id)) {
+        const code = (cause as { code?: unknown } | null)?.code;
+        setAnalysisTerminal(code === "calendar_terminal");
+        setAnalysisPending(code === "calendar_pending");
         setNotice(
           cause instanceof Error
             ? cause.message
-            : "Calendar analysis could not finish. Nothing was saved.",
+            : "Calendar analysis could not be confirmed. Check this unchanged request before starting a new analysis.",
         );
+      }
     } finally {
       finish(id);
     }
@@ -320,6 +356,7 @@ function CalendarAssistantSession({
   }
   const included = rows.filter((row) => row.included);
   const ready =
+    !!analysisRequestId &&
     included.length > 0 &&
     included.every(
       (row) => row.reviewed && !!proposalToEvent(row.proposal).event,
@@ -340,7 +377,8 @@ function CalendarAssistantSession({
   }
   async function save() {
     const events = confirmationRef.current;
-    if (!events?.length || !allowed()) return;
+    const requestId = analysisRequestId;
+    if (!requestId || !events?.length || !allowed()) return;
     // Revalidate current selections, rather than accepting a stale open dialog.
     const includedNow = rowsRef.current.filter((row) => row.included);
     const resolved = includedNow.map((row) => proposalToEvent(row.proposal));
@@ -368,11 +406,14 @@ function CalendarAssistantSession({
     const id = start("save");
     if (id === null) return;
     try {
-      const result = await actions.importCalendar({
-        circleId,
-        confirmed: true,
-        events,
-      });
+      const result = await actions.importCalendar(
+        {
+          circleId,
+          confirmed: true,
+          events,
+        },
+        requestId,
+      );
       if (!current(id)) return;
       setConfirmation(null);
       if (!result.ok) {
@@ -384,6 +425,10 @@ function CalendarAssistantSession({
       }
       setRows([]);
       setQuestions([]);
+      setAnalysisRequestId(null);
+      analysis.current = null;
+      setAnalysisTerminal(false);
+      setAnalysisPending(false);
       setNotice(
         `${result.created || 0} ${(result.created || 0) === 1 ? "event added" : "events added"}. ${result.skipped || 0} already on this Circle’s calendar.`,
       );
@@ -416,7 +461,9 @@ function CalendarAssistantSession({
         <T style={s.description}>
           Your calendar conversation, selected attachment, reference date and
           timezone are sent to OpenAI only when you choose Propose events.
-          Nothing is added until you review and confirm.
+          Calendar analysis uses gpt-6-luna with no alternate-model fallback.
+          Each new analysis may incur usage charges. Nothing is added until you
+          review and confirm.
         </T>
         <T style={s.description}>
           TXT/CSV: UTF-8, up to 12,000 bytes. JPEG/PNG/WebP photos: up to 10 MiB
@@ -433,7 +480,7 @@ function CalendarAssistantSession({
               value={referenceDate}
               onChangeText={(value) => {
                 setReferenceDate(value);
-                invalidateReview();
+                invalidateAnalysisInput();
               }}
               editable={!busy}
               autoCapitalize="none"
@@ -448,7 +495,7 @@ function CalendarAssistantSession({
               value={timeZone}
               onChangeText={(value) => {
                 setTimeZone(value);
-                invalidateReview();
+                invalidateAnalysisInput();
               }}
               editable={!busy}
               autoCapitalize="none"
@@ -499,7 +546,7 @@ function CalendarAssistantSession({
           value={message}
           onChangeText={(value) => {
             setMessage(value);
-            invalidateReview();
+            invalidateAnalysisInput();
           }}
           editable={!busy}
           maxLength={CALENDAR_LIMITS.maxMessageChars}
@@ -564,13 +611,39 @@ function CalendarAssistantSession({
         <View style={{ alignItems: "flex-start" }}>
           <Button
             icon={Sparkles}
-            disabled={!!busy || (!message.trim() && !source)}
+            disabled={
+              !!busy || analysisTerminal || (!message.trim() && !source)
+            }
             onPress={() => void analyze()}
           >
-            {busy === "analysis" ? "Reading calendar…" : "Propose events"}
+            {busy === "analysis"
+              ? "Reading calendar…"
+              : analysisPending
+                ? "Check existing analysis"
+                : "Propose events"}
           </Button>
         </View>
         {!!notice && <Banner text={notice} onDismiss={() => setNotice("")} />}
+        {analysisTerminal && (
+          <View style={{ alignItems: "flex-start" }}>
+            <Button
+              secondary
+              disabled={!!busy}
+              onPress={() => {
+                analysis.current = null;
+                setAnalysisRequestId(null);
+                setAnalysisTerminal(false);
+                setAnalysisPending(false);
+                invalidateReview();
+                setNotice(
+                  "The next Propose events action starts a new analysis and may incur another charge. Nothing has been added.",
+                );
+              }}
+            >
+              New analysis (may incur a charge)
+            </Button>
+          </View>
+        )}
         {!!questions.length && (
           <View
             testID="calendar-questions"
