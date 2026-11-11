@@ -33,6 +33,7 @@ import {
   Camera,
   MoreHorizontal,
   Info,
+  Sparkles,
 } from "lucide-react-native";
 import { useCircle } from "../../src/state/CircleProvider";
 import { visibleMessages } from "../../src/state/model";
@@ -394,7 +395,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
   ];
   const secondarySection =
     surface === "calendar"
-      ? "Calendar"
+      ? "Circle calendar"
       : surface === "room"
         ? "Room"
         : !["Feed", "Chat", "Highlights"].includes(tab)
@@ -611,6 +612,8 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 flexDirection: "row",
                 borderTopWidth: 1,
                 borderColor: palette.line,
+                padding: 5,
+                gap: 4,
               }}
             >
               {(["Feed", "Chat", "Highlights"] as Tab[]).map((label) => {
@@ -620,7 +623,7 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                     ? BookOpen
                     : label === "Chat"
                       ? MessageCircle
-                      : null;
+                      : Sparkles;
                 return (
                   <Pressable
                     key={label}
@@ -635,8 +638,8 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                       gap: 6,
                       alignItems: "center",
                       justifyContent: "center",
-                      borderBottomWidth: 2,
-                      borderColor: selected ? palette.teal : "transparent",
+                      borderRadius: 13,
+                      backgroundColor: selected ? palette.mint : "transparent",
                     }}
                   >
                     {Icon && (
@@ -698,16 +701,30 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
                 borderColor: palette.line,
               }}
             >
-              <T style={{ fontFamily: font.bold, fontSize: 12 }}>
+              <T
+                accessibilityRole="header"
+                style={{ fontFamily: font.bold, fontSize: 12 }}
+              >
                 {secondarySection}
               </T>
-              <IconButton
-                icon={X}
-                label={`Close ${secondarySection}`}
-                onPress={() => showTab("Feed")}
-                size={17}
-                style={{ width: 44, height: 44 }}
-              />
+              {surface ? (
+                <Button
+                  secondary
+                  icon={ArrowLeft}
+                  style={{ paddingHorizontal: 10 }}
+                  onPress={() => setSurface(null)}
+                >
+                  Back to Circle
+                </Button>
+              ) : (
+                <IconButton
+                  icon={X}
+                  label={`Close ${secondarySection}`}
+                  onPress={() => showTab("Feed")}
+                  size={17}
+                  style={{ width: 44, height: 44 }}
+                />
+              )}
             </View>
           )}
         </Card>
@@ -735,46 +752,6 @@ function CircleDetail({ id, initialTab }: { id: string; initialTab?: string }) {
         <>
           {surface && (
             <View style={{ gap: 20 }}>
-              <View
-                style={[
-                  {
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 14,
-                    flexWrap: "wrap",
-                  },
-                  hasWallpaper && {
-                    backgroundColor: palette.white,
-                    padding: 16,
-                    borderRadius: 16,
-                  },
-                ]}
-              >
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                  }}
-                >
-                  {surface === "calendar" ? (
-                    <CalendarDays size={22} color={palette.teal} />
-                  ) : (
-                    <Video size={22} color={palette.teal} />
-                  )}
-                  <T style={{ fontFamily: font.heading, fontSize: 23 }}>
-                    {surface === "calendar" ? "Circle calendar" : "Circle room"}
-                  </T>
-                </View>
-                <Button
-                  secondary
-                  icon={ArrowLeft}
-                  onPress={() => setSurface(null)}
-                >
-                  Back to Circle
-                </Button>
-              </View>
               {surface === "calendar" && <CalendarPanel circleId={id} />}
             </View>
           )}

@@ -12,6 +12,7 @@ export default function Root({ children }: { children: React.ReactNode }) {
         <meta name="theme-color" content="#137F70" />
         <title>Circle — Your people. Your place.</title>
         <ScrollViewStyleReset />
+        <link rel="stylesheet" href="/circle.css" />
       </head>
       <body>{children}</body>
     </html>

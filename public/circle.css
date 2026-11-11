@@ -1,0 +1,21 @@
+html {
+  background: #f7f5f0;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+}
+::selection {
+  background: #d4e9dd;
+  color: #263b36;
+}
+:focus-visible {
+  outline: 2px solid #287663 !important;
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}

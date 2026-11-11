@@ -7,7 +7,8 @@ import {
   StyleSheet,
   Animated,
   useWindowDimensions,
-  AccessibilityInfo,
+  AppState,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
 import {
@@ -41,8 +42,11 @@ import {
 import { font, colors as c } from "../ui/theme";
 import { useCircleTheme, themeTint } from "./theme-context";
 import { Video, timeAgo } from "../ui/PostCard";
-import type { Post, PostAttachment } from "../types";
+import type { Post } from "../types";
 import { getPostMedia } from "../lib/postMedia";
+import { HighlightsPrints } from "./HighlightsPrints";
+import { highlightFrames } from "./highlightsPresentation";
+import { useReducedMotion } from "../ui/useReducedMotion";
 export function HighlightsPanel({ circleId }: { circleId: string }) {
   const { state, mode } = useCircle();
   const theme = useCircleTheme();
@@ -54,9 +58,13 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
     [saving, setSaving] = useState(false);
   const summary = buildCatchUp(state, features, circleId, cutoff);
   const circle = state.circles.find((x) => x.id === circleId);
-  const montageCover = summary.montage.find(
-    (post) => post.mediaType === "image" && post.media,
-  )?.media;
+  const photos = summary.montage.flatMap((post) =>
+    getPostMedia(post).flatMap((media, index) =>
+      media.type === "image"
+        ? [{ id: `${post.id}:${index}`, uri: media.uri, circleId }]
+        : [],
+    ),
+  );
   if (!features.ready) return <Loading />;
   if (!summary.authorized)
     return (
@@ -85,90 +93,60 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
       {!!features.error && <Banner text={features.error} />}
       {!!notice && <Banner text={notice} onDismiss={() => setNotice("")} />}
       <View testID="highlights-content">
-        <Card>
-          <View
-            style={{
-              height: width < 600 ? 240 : 310,
-              backgroundColor: "#173E35",
-              overflow: "hidden",
-            }}
+        <Card style={styles.recapCard}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Play Highlights montage"
+            disabled={!summary.montage.length}
+            onPress={() => setOpen(true)}
+            style={({ pressed }) => [
+              styles.recapHero,
+              width >= 800 && styles.recapHeroWide,
+              pressed && { opacity: 0.88 },
+            ]}
           >
-            {montageCover && (
-              <StableImage
-                uri={montageCover}
-                circleId={circleId}
-                style={StyleSheet.absoluteFillObject}
-              />
-            )}
-            <View
-              style={[
-                StyleSheet.absoluteFillObject,
-                { backgroundColor: "rgba(14,38,33,.32)" },
-              ]}
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Play Highlights montage"
-              disabled={!summary.montage.length}
-              onPress={() => setOpen(true)}
-              style={{
-                flex: 1,
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 13,
-              }}
-            >
+            <View style={styles.printBackdrop}>
+              <HighlightsPrints photos={photos} />
               <View
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 32,
-                  backgroundColor: "#FFFFFFEE",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+                style={[styles.momentBadge, { backgroundColor: theme.surface }]}
               >
-                <Play
-                  size={26}
-                  color={theme.accent}
-                  fill={theme.accent}
-                  style={{ marginLeft: 4 }}
-                />
+                <Images size={12} color={theme.accent} />
+                <T style={styles.badgeText}>
+                  {summary.montage.length}{" "}
+                  {summary.montage.length === 1 ? "memory" : "memories"}
+                </T>
               </View>
-              <T
-                style={{
-                  fontFamily: font.editorial,
-                  fontSize: 30,
-                  color: "white",
-                }}
-              >
-                Your Circle, in moments.
-              </T>
-              <T style={{ color: "#FFFFFFCE", fontSize: 12 }}>
-                {summary.montage.length
-                  ? `${summary.montage.length} moments · Tap to relive them`
-                  : "Your next story starts with a shared moment."}
-              </T>
-            </Pressable>
-          </View>
-          <View
-            style={{
-              padding: 21,
-              flexDirection: "row",
-              gap: 15,
-              alignItems: "center",
-            }}
-          >
-            <View style={{ flex: 1, gap: 5 }}>
-              <T style={{ fontFamily: font.bold, fontSize: 14 }}>
-                Your private Circle montage
-              </T>
-              <T style={{ color: c.muted, fontSize: 11, lineHeight: 18 }}>
-                A playable slideshow of shared photos, videos, and thoughts.
-                Photos in an album play together, one by one.
-              </T>
             </View>
-            <LockKeyhole size={17} color={theme.accent} />
+            <View style={styles.heroWords}>
+              <T style={[styles.eyebrow, { color: theme.accent }]}>
+                CIRCLE HIGHLIGHTS
+              </T>
+              <T accessibilityRole="header" style={styles.heroTitle}>
+                Little moments.{"\n"}Lasting memories.
+              </T>
+              <T style={styles.heroDescription}>
+                {summary.montage.length
+                  ? "Your photos, videos and stories, gathered into one little reel."
+                  : "Share a memory to start your Circle’s next reel."}
+              </T>
+              <View
+                style={[
+                  styles.playPill,
+                  { backgroundColor: theme.accent },
+                  !summary.montage.length && { opacity: 0.45 },
+                ]}
+              >
+                <Play size={16} color="white" fill="white" />
+                <T style={styles.playLabel}>Watch Highlights</T>
+                <ArrowUpRight size={15} color="white" />
+              </View>
+            </View>
+          </Pressable>
+          <View style={styles.privateNote}>
+            <LockKeyhole size={13} color={c.muted} />
+            <T style={styles.privateNoteText}>
+              Just for the people in this Circle · Albums play photo by photo
+            </T>
           </View>
         </Card>
       </View>
@@ -215,6 +193,7 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
                   {post.mediaType === "image" && post.media ? (
                     <StableImage
                       uri={post.media}
+                      circleId={circleId}
                       style={{ width: 52, height: 52, borderRadius: 10 }}
                     />
                   ) : (
@@ -269,7 +248,7 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
       <View testID="highlights-info">
         <Card
           style={{
-            padding: width < 600 ? 23 : 32,
+            padding: width < 600 ? 20 : 24,
             backgroundColor: theme.surface,
             borderColor: c.line,
           }}
@@ -306,9 +285,9 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
               <T
                 style={{
                   fontFamily: font.editorial,
-                  fontSize: width < 600 ? 29 : 37,
+                  fontSize: width < 600 ? 25 : 29,
                   letterSpacing: -0.8,
-                  lineHeight: 44,
+                  lineHeight: 36,
                 }}
               >
                 Your Circle’s Highlights.
@@ -344,7 +323,7 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
               flexDirection: "row",
               flexWrap: "wrap",
               gap: 12,
-              marginTop: 26,
+              marginTop: 20,
             }}
           >
             {[
@@ -373,7 +352,7 @@ export function HighlightsPanel({ circleId }: { circleId: string }) {
                 key={label}
                 style={{
                   flex: 1,
-                  minWidth: 120,
+                  minWidth: 115,
                   backgroundColor: "#F7F7F2",
                   padding: 16,
                   borderRadius: 12,
@@ -440,34 +419,78 @@ function Montage({
   const [index, setIndex] = useState(0),
     [paused, setPaused] = useState(false),
     [finished, setFinished] = useState(false);
-  const [reduced, setReduced] = useState(false);
+  const reduced = useReducedMotion();
+  const [active, setActive] = useState(AppState.currentState === "active");
   const progress = useRef(new Animated.Value(0)).current;
-  const allowed = new Set(feed.map((p) => p.id));
-  const visible = posts
-    .filter((post) => allowed.has(post.id))
-    .flatMap<{ post: Post; attachment?: PostAttachment; photoIndex: number }>(
-      (post) => {
-        const media = getPostMedia(post);
-        return media.length
-          ? media.map((attachment, photoIndex) => ({
-              post,
-              attachment,
-              photoIndex,
-            }))
-          : [{ post, attachment: undefined, photoIndex: 0 }];
-      },
-    );
+  const entrance = useRef(new Animated.Value(1)).current;
+  const visible = highlightFrames(posts, feed);
   const post = visible[index]?.post;
   const media = visible[index]?.attachment;
+  const hasPost = !!post;
   const barStart = Math.max(0, Math.min(index - 5, visible.length - 12));
   const progressFrames = visible.slice(barStart, barStart + 12);
   const author = state.users.find((x) => x.id === post?.authorId);
   useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduced);
+    const subscription = AppState.addEventListener("change", (state) =>
+      setActive(state === "active"),
+    );
+    return () => subscription.remove();
   }, []);
+  const frameId = visible[index]?.id;
+  useEffect(() => {
+    entrance.stopAnimation();
+    entrance.setValue(reduced ? 1 : 0);
+    if (reduced) return;
+    const animation = Animated.timing(entrance, {
+      toValue: 1,
+      duration: 240,
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [entrance, frameId, reduced]);
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.defaultPrevented) return;
+      const target = event.target instanceof Element ? event.target : null;
+      // Arrow keys belong to focused form fields, sliders and video controls.
+      if (
+        target?.closest(
+          'input, textarea, select, video, [role="slider"], [contenteditable]:not([contenteditable="false"]), [data-testid="highlights-video"]',
+        )
+      )
+        return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setFinished(false);
+        setIndex((previous) => Math.max(0, previous - 1));
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        if (index < visible.length - 1) {
+          setIndex(index + 1);
+          setFinished(false);
+        } else setFinished(true);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [index, visible.length, onClose]);
   useEffect(() => {
     progress.setValue(0);
-    if (paused || finished || !post || media?.type === "video" || reduced)
+    if (
+      paused ||
+      !active ||
+      finished ||
+      !hasPost ||
+      media?.type === "video" ||
+      reduced
+    )
       return;
     const animation = Animated.timing(progress, {
       toValue: 1,
@@ -484,8 +507,10 @@ function Montage({
   }, [
     index,
     paused,
+    active,
     finished,
-    post,
+    hasPost,
+    frameId,
     media?.type,
     progress,
     reduced,
@@ -500,226 +525,343 @@ function Montage({
     <Modal
       visible
       transparent={false}
-      animationType="fade"
+      animationType={reduced ? "none" : "fade"}
       onRequestClose={onClose}
     >
       <View
-        style={{
-          flex: 1,
-          backgroundColor: "#102A24",
-          padding: 22,
-          paddingTop: 42,
-        }}
+        testID="highlights-dialog"
+        accessibilityViewIsModal
+        style={styles.theater}
       >
-        <View style={{ flexDirection: "row", gap: 5, marginBottom: 17 }}>
-          {progressFrames.map((frame, offset) => {
-            const i = barStart + offset;
-            return (
-              <View
-                key={`${frame.post.id}:${frame.photoIndex}`}
-                style={{
-                  height: 3,
-                  backgroundColor: "#FFFFFF30",
-                  flex: 1,
-                  borderRadius: 2,
-                  overflow: "hidden",
-                }}
-              >
-                {i < index || finished ? (
-                  <View
-                    style={{
-                      height: 3,
-                      backgroundColor: "white",
-                      width: "100%",
-                    }}
-                  />
-                ) : i === index ? (
-                  <Animated.View
-                    style={{
-                      height: 3,
-                      backgroundColor: "white",
-                      width: progress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ["0%", "100%"],
-                      }),
-                    }}
-                  />
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
-            marginBottom: 18,
-          }}
-        >
-          <Avatar
-            uri={author?.avatar}
-            name={author?.name || circleName}
-            size={38}
-          />
-          <View style={{ flex: 1, gap: 4 }}>
-            <T style={{ fontFamily: font.bold, color: "white", fontSize: 13 }}>
-              {circleName}
-            </T>
-            <T style={{ fontSize: 11, color: "#BED0C3" }}>
-              {author?.name || "Your people"}
-            </T>
-          </View>
-          {media?.type !== "video" && (
-            <IconButton
-              icon={paused ? Play : Pause}
-              label={paused ? "Resume Highlights" : "Pause Highlights"}
-              color="white"
-              onPress={() => setPaused(!paused)}
-            />
-          )}
-          <IconButton
-            icon={X}
-            label="Close Highlights"
-            onPress={onClose}
-            color="white"
-          />
-        </View>
-        <View
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-            borderRadius: 16,
-            backgroundColor: "#183C30",
-          }}
-        >
-          {!post ? (
-            <T style={{ color: "white", padding: 24, textAlign: "center" }}>
-              This moment is no longer available.
-            </T>
-          ) : media ? (
-            media.type === "video" ? (
-              <View style={{ width: "100%" }}>
-                <Video uri={media.uri} />
-                <T
+        <View style={styles.theaterContent}>
+          <View style={{ flexDirection: "row", gap: 5, marginBottom: 17 }}>
+            {progressFrames.map((frame, offset) => {
+              const i = barStart + offset;
+              return (
+                <View
+                  key={`${frame.post.id}:${frame.photoIndex}`}
                   style={{
-                    color: "#B9CEC0",
-                    fontSize: 11,
-                    textAlign: "center",
-                    marginTop: 15,
+                    height: 3,
+                    backgroundColor: "#FFFFFF30",
+                    flex: 1,
+                    borderRadius: 2,
+                    overflow: "hidden",
                   }}
                 >
-                  Watch at your own pace, then continue.
-                </T>
-              </View>
-            ) : (
-              <StableImage
-                uri={media.uri}
-                style={{ width: "100%", height: "100%" }}
-                resizeMode="contain"
-                accessibilityLabel={post.content || "A shared Circle photo"}
+                  {i < index || finished ? (
+                    <View
+                      style={{
+                        height: 3,
+                        backgroundColor: "white",
+                        width: "100%",
+                      }}
+                    />
+                  ) : i === index ? (
+                    <Animated.View
+                      style={{
+                        height: 3,
+                        backgroundColor: "white",
+                        width: progress.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ["0%", "100%"],
+                        }),
+                      }}
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 18,
+            }}
+          >
+            <Avatar
+              uri={author?.avatar}
+              name={author?.name || circleName}
+              size={38}
+            />
+            <View style={{ flex: 1, gap: 4 }}>
+              <T
+                style={{ fontFamily: font.bold, color: "white", fontSize: 13 }}
+              >
+                {circleName}
+              </T>
+              <T style={{ fontSize: 11, color: "#BED0C3" }}>
+                {author?.name || "Your people"}
+              </T>
+            </View>
+            {media?.type !== "video" && (
+              <IconButton
+                icon={paused ? Play : Pause}
+                label={paused ? "Resume Highlights" : "Pause Highlights"}
+                color="white"
+                onPress={() => setPaused(!paused)}
               />
-            )
-          ) : (
+            )}
+            <IconButton
+              icon={X}
+              label="Close Highlights"
+              onPress={onClose}
+              color="white"
+            />
+          </View>
+          <Animated.View
+            testID="highlights-frame"
+            style={[
+              styles.stage,
+              {
+                opacity: entrance.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.6, 1],
+                }),
+                transform: [
+                  { perspective: 1000 },
+                  {
+                    rotateY: entrance.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ["7deg", "0deg"],
+                    }),
+                  },
+                  {
+                    translateX: entrance.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {!post ? (
+              <T style={{ color: "white", padding: 24, textAlign: "center" }}>
+                This moment is no longer available.
+              </T>
+            ) : media ? (
+              media.type === "video" ? (
+                <View testID="highlights-video" style={{ width: "100%" }}>
+                  <Video uri={media.uri} />
+                  <T
+                    style={{
+                      color: "#B9CEC0",
+                      fontSize: 11,
+                      textAlign: "center",
+                      marginTop: 15,
+                    }}
+                  >
+                    Watch at your own pace, then continue.
+                  </T>
+                </View>
+              ) : (
+                <StableImage
+                  uri={media.uri}
+                  circleId={post.circleId}
+                  style={{ width: "100%", height: "100%" }}
+                  resizeMode="contain"
+                  accessibilityLabel={post.content || "A shared Circle photo"}
+                />
+              )
+            ) : (
+              <T
+                style={{
+                  fontFamily: font.heading,
+                  fontSize: 26,
+                  lineHeight: 39,
+                  color: "white",
+                  padding: 36,
+                  textAlign: "center",
+                }}
+              >
+                {post.content}
+              </T>
+            )}
+            {finished && (
+              <View
+                style={[
+                  StyleSheet.absoluteFillObject,
+                  {
+                    backgroundColor: "#102A24EB",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 30,
+                    gap: 15,
+                  },
+                ]}
+              >
+                <CheckCheck size={40} color="#BFD8A6" />
+                <T
+                  style={{
+                    fontFamily: font.heading,
+                    fontSize: 27,
+                    color: "white",
+                    textAlign: "center",
+                  }}
+                >
+                  A little closer.
+                </T>
+                <T style={{ color: "#BED0C3", textAlign: "center" }}>
+                  That’s your Circle, lately.
+                </T>
+                <Button
+                  onPress={() => {
+                    setIndex(0);
+                    setFinished(false);
+                    setPaused(false);
+                  }}
+                >
+                  Watch again
+                </Button>
+                <Button secondary onPress={onClose}>
+                  Back to your Circle
+                </Button>
+              </View>
+            )}
+          </Animated.View>
+          {post && media && (
             <T
+              numberOfLines={3}
               style={{
-                fontFamily: font.heading,
-                fontSize: 26,
-                lineHeight: 39,
-                color: "white",
-                padding: 36,
+                color: "#E8F0E8",
+                fontSize: 13,
+                lineHeight: 22,
+                marginTop: 17,
                 textAlign: "center",
               }}
             >
               {post.content}
             </T>
           )}
-          {finished && (
-            <View
-              style={[
-                StyleSheet.absoluteFillObject,
-                {
-                  backgroundColor: "#102A24EB",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 30,
-                  gap: 15,
-                },
-              ]}
-            >
-              <CheckCheck size={40} color="#BFD8A6" />
-              <T
-                style={{
-                  fontFamily: font.heading,
-                  fontSize: 27,
-                  color: "white",
-                  textAlign: "center",
-                }}
-              >
-                A little closer.
-              </T>
-              <T style={{ color: "#BED0C3", textAlign: "center" }}>
-                That’s your Circle, lately.
-              </T>
-              <Button
-                onPress={() => {
-                  setIndex(0);
-                  setFinished(false);
-                  setPaused(false);
-                }}
-              >
-                Watch again
-              </Button>
-              <Button secondary onPress={onClose}>
-                Back to your Circle
-              </Button>
-            </View>
-          )}
-        </View>
-        {post && media && (
-          <T
-            numberOfLines={3}
+          <View
             style={{
-              color: "#E8F0E8",
-              fontSize: 13,
-              lineHeight: 22,
-              marginTop: 17,
-              textAlign: "center",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: 15,
             }}
           >
-            {post.content}
-          </T>
-        )}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginTop: 15,
-          }}
-        >
-          <IconButton
-            icon={ChevronLeft}
-            label="Previous moment"
-            color="white"
-            onPress={() => {
-              setFinished(false);
-              setIndex(Math.max(0, index - 1));
-            }}
-          />
-          <T style={{ fontSize: 11, color: "#BFD1C3" }}>
-            {Math.min(index + 1, visible.length)} / {visible.length} moments
-          </T>
-          <IconButton
-            icon={ChevronRight}
-            label="Next moment"
-            color="white"
-            onPress={next}
-          />
+            <IconButton
+              icon={ChevronLeft}
+              label="Previous moment"
+              color="white"
+              onPress={() => {
+                setFinished(false);
+                setIndex(Math.max(0, index - 1));
+              }}
+            />
+            <View style={{ alignItems: "center", gap: 5 }}>
+              <T
+                accessibilityLiveRegion="polite"
+                style={{
+                  fontSize: 12,
+                  color: "#E7EEE8",
+                  fontFamily: font.bold,
+                }}
+              >
+                {Math.min(index + 1, visible.length)} / {visible.length} moments
+              </T>
+              <T style={{ fontSize: 10, color: "#BFD1C3" }}>
+                {reduced
+                  ? "Continue at your own pace"
+                  : "A few pages from your Circle"}
+              </T>
+            </View>
+            <IconButton
+              icon={ChevronRight}
+              label="Next moment"
+              color="white"
+              onPress={next}
+            />
+          </View>
         </View>
       </View>
     </Modal>
   );
 }
+const styles = StyleSheet.create({
+  recapCard: { backgroundColor: "#F7F4EB", borderRadius: 22 },
+  recapHero: { padding: 24, gap: 14, alignItems: "center" },
+  recapHeroWide: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 34,
+    padding: 30,
+  },
+  printBackdrop: {
+    minHeight: 220,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  momentBadge: {
+    flexDirection: "row",
+    gap: 6,
+    alignItems: "center",
+    paddingHorizontal: 12,
+    minHeight: 28,
+    borderRadius: 20,
+    marginTop: -4,
+    borderWidth: 1,
+    borderColor: c.line,
+  },
+  badgeText: { fontSize: 11, fontFamily: font.medium, color: c.muted },
+  heroWords: {
+    flexShrink: 1,
+    maxWidth: 300,
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  eyebrow: { fontFamily: font.bold, fontSize: 10, letterSpacing: 1.6 },
+  heroTitle: {
+    fontFamily: font.editorial,
+    fontSize: 36,
+    lineHeight: 41,
+    letterSpacing: -0.8,
+  },
+  heroDescription: { color: c.muted, fontSize: 13, lineHeight: 22 },
+  playPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 28,
+    minHeight: 46,
+    paddingHorizontal: 19,
+    marginTop: 3,
+  },
+  playLabel: { fontSize: 13, fontFamily: font.bold, color: "white" },
+  privateNote: {
+    paddingVertical: 13,
+    paddingHorizontal: 19,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF70",
+    borderTopWidth: 1,
+    borderColor: "#263B360A",
+  },
+  privateNoteText: {
+    fontSize: 11,
+    lineHeight: 17,
+    color: c.muted,
+    flexShrink: 1,
+  },
+  theater: { flex: 1, backgroundColor: "#102A24", padding: 16, paddingTop: 28 },
+  theaterContent: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 980,
+    alignSelf: "center",
+  },
+  stage: {
+    flex: 1,
+    minHeight: 130,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    borderRadius: 14,
+    backgroundColor: "#183C30",
+  },
+});

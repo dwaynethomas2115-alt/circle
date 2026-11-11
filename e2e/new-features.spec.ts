@@ -4,26 +4,30 @@ import type { Page } from "@playwright/test";
 test.use({ timezoneId: "America/Whitehorse", reducedMotion: "reduce" });
 
 async function expectPrimaryNavigation(page: Page) {
-  for (const name of ["Feed", "Highlights", "Chat", "About"]) {
+  for (const name of ["Memories", "Chat", "Highlights"]) {
     await expect(page.getByRole("tab", { name, exact: true })).toBeVisible();
   }
-  await expect(page.getByRole("tab", { name: /^Members/ })).toBeVisible();
   const tabs = (await page.getByRole("tab").allTextContents()).map((value) =>
     value.trim(),
   );
-  expect(tabs.slice(0, 5)).toEqual([
-    "Feed",
-    "Highlights",
-    "Chat",
-    expect.stringMatching(/^Members/),
-    "About",
-  ]);
-  for (const name of ["Room", "Calendar", "Polls", "Catch up"]) {
+  expect(tabs).toEqual(["Memories", "Chat", "Highlights"]);
+  for (const name of ["Room", "Calendar", "Polls", "Catch up", "About"]) {
     await expect(page.getByRole("tab", { name, exact: true })).toHaveCount(0);
   }
+  await expect(page.getByRole("tab", { name: /^Members/ })).toHaveCount(0);
 }
 
-test("Circle navigation keeps room and calendar in header actions and polls in Chat", async ({
+async function openCircleOption(page: Page, name: string) {
+  await page
+    .getByRole("button", { name: "More Circle options", exact: true })
+    .click();
+  const options = page.getByTestId("circle-options-sheet");
+  await expect(options).toBeVisible();
+  await options.getByRole("button", { name, exact: true }).click();
+  await expect(options).not.toBeVisible();
+}
+
+test("Circle navigation keeps core tabs compact, calendar in options and polls in Chat", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -31,8 +35,19 @@ test("Circle navigation keeps room and calendar in header actions and polls in C
   await page.goto("/circle/football");
   await expectPrimaryNavigation(page);
   await expect(
-    page.getByRole("tab", { name: "Feed", exact: true }),
+    page.getByRole("tab", { name: "Memories", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
+  await page
+    .getByRole("button", { name: "More Circle options", exact: true })
+    .click();
+  const options = page.getByTestId("circle-options-sheet");
+  for (const name of ["Calendar", "Members", "About this Circle"])
+    await expect(
+      options.getByRole("button", { name, exact: true }),
+    ).toBeVisible();
+  await options
+    .getByRole("button", { name: "Close Circle options", exact: true })
+    .click();
   await page.getByRole("tab", { name: "Highlights", exact: true }).click();
   await expect(
     page.getByText("Your Circle’s Highlights.", { exact: true }),
@@ -47,7 +62,7 @@ test("Circle navigation keeps room and calendar in header actions and polls in C
   await expect(
     page.getByText("Everyone gets a say.", { exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "Calendar", exact: true }).click();
+  await openCircleOption(page, "Calendar");
   await expect(
     page.getByText("Circle calendar", { exact: true }),
   ).toBeVisible();
@@ -153,7 +168,7 @@ test("Circle calendar validates local times, creates plans and changes RSVP", as
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/circle/football");
-  await page.getByRole("button", { name: "Calendar", exact: true }).click();
+  await openCircleOption(page, "Calendar");
   await expect(
     page.getByText("Circle calendar", { exact: true }),
   ).toBeVisible();
@@ -208,7 +223,7 @@ test("Circle calendar validates local times, creates plans and changes RSVP", as
     page.getByText("0 going · 1 maybe", { exact: true }),
   ).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Calendar", exact: true }).click();
+  await openCircleOption(page, "Calendar");
   await expect(maybe).toHaveAttribute("aria-pressed", "true");
   await page
     .getByRole("button", { name: `Delete event: ${title}`, exact: true })
@@ -236,7 +251,7 @@ test("AI wallpaper settings accept a combined prompt and preserve the saved them
   });
   const buttonColor = () =>
     page
-      .getByRole("button", { name: "Share a moment", exact: true })
+      .getByRole("button", { name: "Add memory", exact: true })
       .evaluate((element) => getComputedStyle(element).backgroundColor);
   await page.goto("/");
   const homeInk = await page
@@ -309,7 +324,7 @@ test("AI wallpaper settings accept a combined prompt and preserve the saved them
   await expect.poll(buttonColor).toBe("rgb(164, 62, 120)");
   await page.goto("/");
   await expect(
-    page.getByText("Welcome home, Alex.", { exact: false }),
+    page.getByTestId("home-circles").getByText(/^your circles$/i),
   ).toBeVisible();
   expect(
     await page

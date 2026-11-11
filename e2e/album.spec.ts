@@ -79,7 +79,7 @@ test("photo albums preserve chosen order, all images, and viewer navigation afte
   ).toBeVisible();
 
   const caption = "Three little pieces of our weekend, kept together.";
-  await page.getByLabel("Post content", { exact: true }).fill(caption);
+  await page.getByLabel("Memory text", { exact: true }).fill(caption);
   await page.evaluate(() => {
     for (const element of Array.from(document.querySelectorAll("div")))
       if (element.scrollHeight > element.clientHeight + 2)
@@ -89,7 +89,7 @@ test("photo albums preserve chosen order, all images, and viewer navigation afte
     path: "/tmp/circle-scrapbook-composer-album-desktop.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await page.reload();
 
@@ -175,7 +175,7 @@ test("ten-photo selection keeps the caption draft and restores adding after remo
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/create");
   const caption = "A whole day worth remembering.";
-  await page.getByLabel("Post content", { exact: true }).fill(caption);
+  await page.getByLabel("Memory text", { exact: true }).fill(caption);
   await choose(page, await pictures(page, 10));
   await expect(
     page.getByText("10 photos, one memory", { exact: true }),
@@ -201,7 +201,7 @@ test("ten-photo selection keeps the caption draft and restores adding after remo
   await expect(
     page.getByRole("button", { name: "Add more photos", exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("Post content", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Memory text", { exact: true })).toHaveValue(
     caption,
   );
   expect(
@@ -214,8 +214,8 @@ test("Circle journal filters by month and reverses the real memory order", async
 }) => {
   await page.goto("/create?circleId=family");
   const archived = "A memory from an earlier chapter.";
-  await page.getByLabel("Post content", { exact: true }).fill(archived);
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByLabel("Memory text", { exact: true }).fill(archived);
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await expect
     .poll(() =>
@@ -237,11 +237,19 @@ test("Circle journal filters by month and reverses the real memory order", async
   });
   await page.goto("/circle/family");
   await page.reload();
-  const oldMonth = page.getByRole("button", {
-    name: "Show december 2024",
+  const filters = page.getByTestId("memory-filters");
+  const openFilters = () =>
+    page.getByRole("button", { name: "Filter memories", exact: true }).click();
+  const oldMonth = filters.getByRole("radio", {
+    name: "December 2024",
     exact: true,
   });
+  await openFilters();
   await expect(oldMonth).toBeVisible();
+  await expect(
+    filters.getByRole("radio", { name: "Newest first", exact: true }),
+  ).toBeChecked();
+  await filters.getByRole("button", { name: "Done", exact: true }).click();
   const newest = page.getByText("Less screen time, more green time.", {
     exact: false,
   });
@@ -250,17 +258,33 @@ test("Circle journal filters by month and reverses the real memory order", async
   expect((await newest.boundingBox())!.y).toBeLessThan(
     (await memory.boundingBox())!.y,
   );
-  await page
-    .getByRole("button", { name: "Change moment order", exact: true })
-    .click();
-  expect((await memory.boundingBox())!.y).toBeLessThan(
-    (await newest.boundingBox())!.y,
-  );
+  await openFilters();
+  const oldestFirst = filters.getByRole("radio", {
+    name: "Oldest first",
+    exact: true,
+  });
+  await oldestFirst.click();
+  await expect(oldestFirst).toBeChecked();
+  await filters.getByRole("button", { name: "Done", exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await memory.boundingBox())!.y < (await newest.boundingBox())!.y,
+    )
+    .toBe(true);
+  await openFilters();
   await oldMonth.click();
+  await expect(oldMonth).toBeChecked();
+  await filters.getByRole("button", { name: "Done", exact: true }).click();
   await expect(memory).toBeVisible();
   await expect(newest).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Show all moments", exact: true })
-    .click();
+  await openFilters();
+  const allMoments = filters.getByRole("radio", {
+    name: "All moments",
+    exact: true,
+  });
+  await allMoments.click();
+  await expect(allMoments).toBeChecked();
+  await filters.getByRole("button", { name: "Done", exact: true }).click();
   await expect(newest).toBeVisible();
 });

@@ -1,14 +1,15 @@
-import { StableImage } from "../ui/StableImage";
 import React from "react";
-import { View, Pressable } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { router } from "expo-router";
-import { Clapperboard, ArrowUpRight, CheckCheck } from "lucide-react-native";
+import { ArrowUpRight, CheckCheck, Play } from "lucide-react-native";
 import { useCircle } from "../state/CircleProvider";
 import { useCircleFeatures } from "./CircleFeaturesProvider";
 import { buildCatchUp } from "./catchup";
 import { T, Card, CircleAvatar } from "../ui/primitives";
 import { font, colors as c } from "../ui/theme";
 import { getPostMedia } from "../lib/postMedia";
+import { HighlightsPrints } from "./HighlightsPrints";
+
 export function HomeHighlightsCard() {
   const { state, joinedCircles } = useCircle();
   const features = useCircleFeatures();
@@ -16,130 +17,81 @@ export function HomeHighlightsCard() {
     circle,
     recap: buildCatchUp(state, features, circle.id),
   }));
-  const total = summaries.reduce((sum, x) => sum + x.recap.total, 0);
+  const total = summaries.reduce((sum, item) => sum + item.recap.total, 0);
   const photos = summaries
-    .flatMap(({ recap }) =>
+    .flatMap(({ circle, recap }) =>
       recap.montage.flatMap((post) =>
-        getPostMedia(post)
-          .filter((media) => media.type === "image")
-          .map((media) => ({ uri: media.uri, id: post.id })),
+        getPostMedia(post).flatMap((media, index) =>
+          media.type === "image"
+            ? [
+                {
+                  uri: media.uri,
+                  id: `${post.id}:${index}`,
+                  circleId: circle.id,
+                },
+              ]
+            : [],
+        ),
       ),
     )
     .slice(0, 3);
   return (
-    <Card
-      style={{
-        padding: 22,
-        backgroundColor: "#F9F7F0",
-        borderColor: c.line,
-      }}
-    >
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <View
-          style={{
-            width: 37,
-            height: 37,
-            backgroundColor: "#E8EDE2",
-            borderRadius: 13,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Clapperboard size={18} color={c.teal} />
+    <Card style={styles.card}>
+      <View style={styles.heading}>
+        <T style={styles.eyebrow}>HIGHLIGHTS</T>
+        <View style={styles.playIcon}>
+          <Play size={13} color={c.teal} fill={c.teal} />
         </View>
-        <T
-          style={{
-            fontSize: 9,
-            color: c.muted,
-            fontFamily: font.bold,
-            letterSpacing: 1.3,
-          }}
-        >
-          HIGHLIGHTS
-        </T>
       </View>
-      <T
-        style={{
-          fontFamily: font.editorial,
-          fontSize: 28,
-          lineHeight: 34,
-          letterSpacing: -0.5,
-          marginTop: 18,
-        }}
-      >
-        {total
-          ? "Your Highlights.\nA little closer."
-          : "Your Highlights.\nWorth another look."}
+      <HighlightsPrints photos={photos} compact />
+      <T accessibilityRole="header" style={styles.title}>
+        The good bits, together.
       </T>
-      <T
-        style={{
-          fontSize: 11,
-          lineHeight: 19,
-          color: c.muted,
-          marginTop: 10,
-          marginBottom: 20,
-        }}
-      >
+      <T style={styles.description}>
         {features.ready
-          ? `${total} ${total === 1 ? "update" : "updates"} across your Circles. A few pages worth revisiting.`
+          ? total
+            ? `${total} ${total === 1 ? "update" : "updates"} from your people. Pick a Circle to play its reel.`
+            : "You’re up to date. Your favourite moments are still here."
           : "A few moments to bring you closer to your people."}
       </T>
-      {photos.length > 0 && (
-        <View style={{ flexDirection: "row", gap: 7, marginBottom: 22 }}>
-          {photos.map((photo, index) => (
-            <StableImage
-              key={`${photo.id}:${index}`}
-              uri={photo.uri}
-              accessibilityLabel="A recent Circle memory"
-              style={{
-                flex: 1,
-                height: 88,
-                borderRadius: 6,
-                borderWidth: 3,
-                borderColor: "white",
-                transform: [{ rotate: index === 1 ? "3deg" : "-2deg" }],
-              }}
-            />
-          ))}
-        </View>
-      )}
-      <View style={{ gap: 16 }}>
+      <View style={styles.circles}>
         {summaries.slice(0, 3).map(({ circle, recap }) => (
           <Pressable
             key={circle.id}
             accessibilityRole="link"
             accessibilityLabel={`View Highlights from ${circle.name}`}
             onPress={() => router.push(`/circle/${circle.id}?tab=highlights`)}
-            style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            style={({ pressed }) => [
+              styles.circle,
+              pressed && { opacity: 0.65 },
+            ]}
           >
-            <CircleAvatar
-              avatar={circle.avatar}
-              color={circle.color}
-              size={28}
-            />
-            <View style={{ flex: 1, gap: 3 }}>
-              <T
-                style={{ fontFamily: font.bold, fontSize: 12 }}
-                numberOfLines={1}
-              >
+            <View
+              style={[
+                styles.ring,
+                { borderColor: recap.total ? c.teal : c.line },
+              ]}
+            >
+              <CircleAvatar
+                avatar={circle.avatar}
+                color={circle.color}
+                size={29}
+              />
+            </View>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+              <T style={styles.circleName} numberOfLines={1}>
                 {circle.name.replace(" Circle", "")}
               </T>
-              <T style={{ fontSize: 11, color: c.muted }}>
+              <T style={styles.circleStatus}>
                 {recap.total
                   ? `${recap.total} new ${recap.total === 1 ? "update" : "updates"}`
                   : "Up to date"}
               </T>
             </View>
             {recap.total ? (
-              <ArrowUpRight size={14} color={c.teal} />
+              <ArrowUpRight size={16} color={c.teal} />
             ) : (
-              <CheckCheck size={14} color={c.teal} />
+              <CheckCheck size={16} color={c.teal} />
             )}
           </Pressable>
         ))}
@@ -147,3 +99,49 @@ export function HomeHighlightsCard() {
     </Card>
   );
 }
+const styles = StyleSheet.create({
+  card: {
+    padding: 21,
+    backgroundColor: "#F6F3E9",
+    borderColor: c.line,
+    borderRadius: 21,
+  },
+  heading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  eyebrow: {
+    fontFamily: font.bold,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: c.teal,
+  },
+  playIcon: {
+    width: 29,
+    height: 29,
+    borderRadius: 16,
+    backgroundColor: "#E4EADA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontFamily: font.editorial,
+    fontSize: 27,
+    lineHeight: 33,
+    letterSpacing: -0.5,
+    marginTop: 4,
+  },
+  description: { color: c.muted, fontSize: 12, lineHeight: 20, marginTop: 9 },
+  circles: { marginTop: 16, gap: 4 },
+  circle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 55,
+    paddingVertical: 6,
+  },
+  ring: { padding: 3, borderWidth: 1.5, borderRadius: 25 },
+  circleName: { fontFamily: font.bold, fontSize: 12 },
+  circleStatus: { fontSize: 11, color: c.muted },
+});

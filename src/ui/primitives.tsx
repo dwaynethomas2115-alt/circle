@@ -100,6 +100,8 @@ export function Button({
           fontFamily: font.bold,
           color: secondary ? theme.accent : "white",
           fontSize: 13,
+          textAlign: "center",
+          flexShrink: 1,
         }}
       >
         {children}
@@ -314,8 +316,8 @@ export function Banner({
 }
 const s = StyleSheet.create({
   icon: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
@@ -332,7 +334,7 @@ const s = StyleSheet.create({
   },
   card: {
     backgroundColor: "white",
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: c.line,
     overflow: "hidden",

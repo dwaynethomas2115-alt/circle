@@ -1,13 +1,34 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+/** Home no longer greets the account by name. Check the current home section
+ * and the actual profile identity before returning to the feed under test.
+ */
+async function expectSignedInHome(page: Page, name: string, username: string) {
+  const homeCircles = page.getByTestId("home-circles");
+  await expect(homeCircles.getByText(/^your circles$/i)).toBeVisible();
+  await page.getByRole("link", { name: "My profile", exact: true }).click();
+  await expect(page).toHaveURL(/\/profile$/);
+  await expect(page.getByText(`@${username}`, { exact: true })).toBeVisible();
+  if ((page.viewportSize()?.width || 0) >= 1050) {
+    // The sidebar identity belongs to the same signed-in account, not a post's
+    // author. Scope the exact name to its profile link to avoid duplicate text.
+    const personalSpace = page.getByRole("link").filter({
+      has: page.getByText("Your personal space", { exact: true }),
+    });
+    await expect(personalSpace.getByText(name, { exact: true })).toBeVisible();
+  } else {
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+  }
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await expect(homeCircles.getByText(/^your circles$/i)).toBeVisible();
+}
 test("home, reactions, threaded comments, publishing and persistence", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(
-    page.getByText("Welcome home, Alex.", { exact: false }),
-  ).toBeVisible();
+  await expectSignedInHome(page, "Alex Morgan", "alexmorgan");
   await expect(
     page.getByText(
       "A private trail recommendation for club members. See you out there!",
@@ -39,9 +60,9 @@ test("home, reactions, threaded comments, publishing and persistence", async ({
   ).toBeVisible();
   await page.goto("/create");
   await page
-    .getByLabel("Post content", { exact: true })
+    .getByLabel("Memory text", { exact: true })
     .fill("A fresh little moment from the browser test.");
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await expect(
     page.getByText("A fresh little moment from the browser test.", {
@@ -109,9 +130,7 @@ test("profile edits, logout, welcome and adult demo signup", async ({
   await expect(
     page.getByText("Your people.", { exact: false }).first(),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Find your Circle", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Get started", exact: true }).click();
   await page.getByLabel("Your name", { exact: true }).fill("Taylor Quinn");
   await page.getByLabel("Username", { exact: true }).fill("taylorquinn");
   await page
@@ -121,21 +140,17 @@ test("profile edits, logout, welcome and adult demo signup", async ({
   await page
     .getByRole("button", { name: "Create your account", exact: true })
     .click();
-  await expect(
-    page.getByText("Welcome home, Taylor.", { exact: false }),
-  ).toBeVisible();
+  await expectSignedInHome(page, "Taylor Quinn", "taylorquinn");
   expect(errors).toEqual([]);
 });
 test("phone layout stays within viewport and navigates", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await expect(
-    page.getByText("Welcome home, Alex.", { exact: false }),
-  ).toBeVisible();
+  await expectSignedInHome(page, "Alex Morgan", "alexmorgan");
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
-  await page.getByRole("link", { name: "Circles", exact: true }).click();
+  await page.getByRole("link", { name: "My Circles", exact: true }).click();
   await expect(
     page.getByText("Every Circle, a shared story.", { exact: true }),
   ).toBeVisible();
@@ -143,7 +158,7 @@ test("phone layout stays within viewport and navigates", async ({ page }) => {
 test("chosen photos remain visible after a full reload", async ({ page }) => {
   await page.goto("/create");
   await page
-    .getByLabel("Post content", { exact: true })
+    .getByLabel("Memory text", { exact: true })
     .fill("A photo saved for another day.");
   const picker = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Photo", exact: true }).click();
@@ -151,7 +166,7 @@ test("chosen photos remain visible after a full reload", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Remove media", exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await expect(
     page.getByText("A photo saved for another day.", { exact: false }),

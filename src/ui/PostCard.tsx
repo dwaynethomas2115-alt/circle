@@ -98,6 +98,7 @@ export function PostCard({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={liked ? "Remove reaction" : "Like post"}
+        accessibilityState={{ selected: liked }}
         onPress={async () => {
           const result = await actions.toggleReaction(post.id);
           if (!result.ok) setNotice(result.error || "Please try again.");
@@ -144,36 +145,37 @@ export function PostCard({
         <Avatar
           name={author?.name || "Circle member"}
           uri={author?.avatar}
-          size={40}
+          size={36}
         />
-        <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${circle?.name || "Circle"}`}
+          onPress={() => router.push(("/circle/" + post.circleId) as never)}
+          style={s.authorLink}
+        >
           <T numberOfLines={1} style={s.author}>
             {author?.name || "Circle member"}
           </T>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Open ${circle?.name || "Circle"}`}
-            onPress={() => router.push(("/circle/" + post.circleId) as never)}
-            style={s.circleLink}
-          >
-            {circle && (
+          <View style={s.circleLink}>
+            {circle ? (
               <CircleAvatar
                 avatar={circle.avatar}
                 color="transparent"
                 size={14}
               />
-            )}
+            ) : null}
             <T numberOfLines={1} style={s.circleName}>
               {circle?.name || "Your Circle"}
             </T>
             <T style={s.relativeTime}>· {timeAgo(post.createdAt)}</T>
-          </Pressable>
-        </View>
+          </View>
+        </Pressable>
         <IconButton
           icon={MoreHorizontal}
           label="Post options"
           onPress={() => setMenu(!menu)}
           color={c.muted}
+          style={{ minWidth: 44, minHeight: 44 }}
         />
       </View>
       {menu && (
@@ -264,6 +266,7 @@ export function PostCard({
           <Pressable
             accessibilityRole="button"
             onPress={() => setExpanded(true)}
+            style={s.readMoreTarget}
           >
             <T style={s.readMore}>Read more</T>
           </Pressable>
@@ -297,19 +300,28 @@ export function PostCard({
 
 const s = StyleSheet.create({
   card: {
-    marginBottom: 24,
-    borderRadius: 18,
-    shadowOpacity: 0,
-    elevation: 0,
+    marginBottom: 22,
+    borderRadius: 12,
+    shadowColor: "#3C493E",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    elevation: 1,
     overflow: "hidden",
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
+  },
+  authorLink: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    justifyContent: "center",
+    gap: 3,
   },
   author: { fontFamily: font.bold, fontSize: 14, letterSpacing: -0.15 },
   circleLink: {
@@ -321,25 +333,40 @@ const s = StyleSheet.create({
   circleName: { fontSize: 11, color: "#66776D", flexShrink: 1 },
   relativeTime: { fontSize: 10, color: c.muted },
   actions: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 10,
+    paddingHorizontal: 16,
+    paddingTop: 5,
+    paddingBottom: 2,
     flexDirection: "row",
     alignItems: "center",
-    gap: 21,
+    gap: 15,
   },
-  action: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 32 },
+  action: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: 2,
+  },
   actionCount: { fontFamily: font.medium, fontSize: 12, color: "#687A6D" },
   openPost: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    minHeight: 32,
+    minHeight: 44,
+    paddingHorizontal: 3,
   },
   openPostText: { fontSize: 11, color: c.teal, fontFamily: font.medium },
-  words: { paddingHorizontal: 21, gap: 10 },
-  textMoment: { paddingTop: 2, paddingBottom: 4 },
-  caption: { fontSize: 14, lineHeight: 23, color: "#42564A" },
+  words: { paddingHorizontal: 18, gap: 9 },
+  textMoment: {
+    paddingTop: 20,
+    paddingBottom: 18,
+    marginHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#F4F2E9",
+  },
+  caption: { fontSize: 15, lineHeight: 24, color: "#42564A" },
   captionAuthor: { fontFamily: font.bold, fontSize: 14, color: c.ink },
   tag: {
     alignSelf: "flex-start",
@@ -349,7 +376,7 @@ const s = StyleSheet.create({
     paddingVertical: 4,
   },
   tagText: {
-    fontSize: 9,
+    fontSize: 10,
     fontFamily: font.bold,
     letterSpacing: 0.7,
     color: "#55705A",
@@ -363,21 +390,31 @@ const s = StyleSheet.create({
   likerAvatars: { flexDirection: "row", paddingLeft: 5 },
   likedText: { fontSize: 11, color: "#6C7A6F", flex: 1, lineHeight: 17 },
   likedName: { fontSize: 11, fontFamily: font.bold, color: "#4B6152" },
-  readMore: { color: c.teal, fontSize: 12, paddingVertical: 3 },
-  commentsLink: { alignSelf: "flex-start", paddingVertical: 2 },
+  readMoreTarget: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  readMore: { color: c.teal, fontSize: 12 },
+  commentsLink: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+  },
   commentsText: { fontSize: 12, color: "#7C877D" },
   footer: {
-    paddingHorizontal: 21,
-    paddingTop: 17,
-    paddingBottom: 18,
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
+    flexWrap: "wrap",
+    gap: 8,
   },
-  date: { fontSize: 10, color: "#8B948B", letterSpacing: 0.2 },
+  date: { fontSize: 11, color: "#788378", letterSpacing: 0.2 },
   private: { flexDirection: "row", alignItems: "center", gap: 4 },
-  privateText: { fontSize: 9, color: c.muted },
+  privateText: { fontSize: 10, color: c.muted },
   menu: {
     marginHorizontal: 18,
     marginBottom: 14,
@@ -387,5 +424,11 @@ const s = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: c.bg,
   },
-  menuItem: { padding: 12, flexDirection: "row", gap: 9, alignItems: "center" },
+  menuItem: {
+    padding: 12,
+    minHeight: 44,
+    flexDirection: "row",
+    gap: 9,
+    alignItems: "center",
+  },
 });

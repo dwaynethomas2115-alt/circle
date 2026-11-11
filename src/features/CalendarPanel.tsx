@@ -9,6 +9,7 @@ import {
   MapPin,
   Plus,
   Sparkles,
+  ArrowUpRight,
   Trash2,
   X,
 } from "lucide-react-native";
@@ -77,6 +78,8 @@ export function CalendarPanel({ circleId }: { circleId: string }) {
   const { state, user } = useCircle();
   const { events, rsvps, ready, error, actions } = useCircleFeatures();
   const { width } = useWindowDimensions();
+  const wide = width >= 1180;
+  const compact = width < 600;
   const [month, setMonth] = useState(
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
@@ -205,7 +208,8 @@ export function CalendarPanel({ circleId }: { circleId: string }) {
   if (!ready) return <Loading />;
   return (
     <View
-      style={{ gap: 22, maxWidth: 950, width: "100%", alignSelf: "center" }}
+      testID="circle-calendar"
+      style={{ gap: 20, maxWidth: 1100, width: "100%", alignSelf: "center" }}
     >
       <View
         style={{
@@ -216,28 +220,25 @@ export function CalendarPanel({ circleId }: { circleId: string }) {
           justifyContent: "space-between",
         }}
       >
-        <View style={{ flex: 1, minWidth: 190, gap: 7 }}>
+        <View style={{ flex: 1, minWidth: 160, gap: 5 }}>
           <T
             style={{
               color: c.teal,
               fontFamily: font.bold,
-              fontSize: 9,
+              fontSize: 10,
               letterSpacing: 1.6,
             }}
           >
-            MAKE TIME FOR EACH OTHER
+            THE SHARED CALENDAR
           </T>
           <T
             style={{
-              fontFamily: font.heading,
-              fontSize: 25,
-              letterSpacing: -0.6,
+              fontFamily: font.editorial,
+              fontSize: compact ? 30 : 36,
+              letterSpacing: -0.8,
             }}
           >
-            Good things ahead.
-          </T>
-          <T style={{ fontSize: 12, color: c.muted, lineHeight: 20 }}>
-            A shared calendar for the moments worth showing up for.
+            Plans to look forward to.
           </T>
         </View>
         <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
@@ -378,499 +379,596 @@ export function CalendarPanel({ circleId }: { circleId: string }) {
           </Button>
         </Card>
       )}
-      <Card style={{ padding: width < 600 ? 16 : 25, gap: 18 }}>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-          }}
-        >
-          <View style={{ gap: 4 }}>
-            <T style={{ fontFamily: font.heading, fontSize: 20 }}>
-              {month.toLocaleDateString(undefined, {
-                month: "long",
-                year: "numeric",
-              })}
-            </T>
-            <T style={{ fontSize: 10, color: c.muted }}>
-              Your Circle’s shared calendar · {zone()}
-            </T>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-            <IconButton
-              icon={ChevronLeft}
-              label="Previous calendar month"
-              onPress={() =>
-                setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
-              }
-            />
-            <IconButton
-              icon={ChevronRight}
-              label="Next calendar month"
-              onPress={() =>
-                setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
-              }
-            />
-          </View>
-        </View>
-        <View style={{ flexDirection: "row" }}>
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
-            <View
-              key={day}
-              style={{
-                width: "14.285714%",
-                alignItems: "center",
-                paddingVertical: 8,
-              }}
-            >
-              <T
-                style={{ fontSize: 10, color: c.muted, fontFamily: font.bold }}
-              >
-                {day}
-              </T>
-            </View>
-          ))}
-        </View>
-        <View
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            borderTopWidth: 1,
-            borderColor: c.line,
-          }}
-        >
-          {cells.map((day, index) => {
-            const valid = day > 0 && day <= days;
-            const dayDate = new Date(
-              month.getFullYear(),
-              month.getMonth(),
-              day,
-            );
-            const key = dateKey(dayDate);
-            const count = valid
-              ? circleEvents.filter((event) =>
-                  eventOnDate(event.startsAt, event.endsAt, key),
-                ).length
-              : 0;
-            const today = key === dateKey(new Date(now));
-            const active = selected === key;
-            return (
-              <View
-                key={index}
-                style={{
-                  width: "14.285714%",
-                  padding: 3,
-                  borderBottomWidth: 1,
-                  borderColor: c.line,
-                }}
-              >
-                {valid ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${readableDate(dayDate)}, ${count} ${count === 1 ? "event" : "events"}`}
-                    accessibilityState={{ selected: active }}
-                    aria-pressed={active}
-                    onPress={() => setSelected(active ? null : key)}
-                    style={{
-                      minHeight: width < 600 ? 51 : 76,
-                      paddingTop: width < 600 ? 7 : 11,
-                      paddingHorizontal: 4,
-                      gap: 7,
-                      alignItems: "center",
-                      borderRadius: 11,
-                      backgroundColor: active
-                        ? c.teal
-                        : today
-                          ? c.mint
-                          : "transparent",
-                    }}
-                  >
-                    <T
-                      style={{
-                        fontSize: width < 600 ? 12 : 14,
-                        color: active ? "white" : today ? c.teal : c.ink,
-                        fontFamily: today || active ? font.bold : font.regular,
-                      }}
-                    >
-                      {day}
-                    </T>
-                    {count > 0 && (
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          gap: 3,
-                          alignItems: "center",
-                        }}
-                      >
-                        {Array.from({ length: Math.min(count, 3) }, (_, i) => (
-                          <View
-                            key={i}
-                            style={{
-                              height: 4,
-                              width: 4,
-                              borderRadius: 2,
-                              backgroundColor: active ? "#FFFFFFBB" : c.teal,
-                            }}
-                          />
-                        ))}
-                      </View>
-                    )}
-                  </Pressable>
-                ) : (
-                  <View style={{ minHeight: width < 600 ? 51 : 76 }} />
-                )}
-              </View>
-            );
-          })}
-        </View>
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-            justifyContent: "space-between",
-          }}
-        >
-          <T style={{ fontSize: 10, color: c.muted, flex: 1 }}>
-            Tap a date to see what’s happening.
-          </T>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              setMonth(
-                new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-              );
-              setSelected(null);
-            }}
-            style={{ padding: 6 }}
-          >
-            <T style={{ fontSize: 11, color: c.teal, fontFamily: font.bold }}>
-              Back to today
-            </T>
-          </Pressable>
-        </View>
-      </Card>
       <View
+        testID="calendar-layout"
         style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 10,
-          justifyContent: "space-between",
+          flexDirection: wide ? "row" : "column",
+          gap: 24,
+          alignItems: "flex-start",
         }}
       >
-        <T style={{ fontFamily: font.heading, fontSize: 18, flex: 1 }}>
-          {selected
-            ? readableDate(parseLocal(selected, "12:00")!)
-            : "Coming up in your Circle"}
-        </T>
-        {selected && (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setSelected(null)}
-            style={{ padding: 6 }}
-          >
-            <T style={{ fontSize: 11, color: c.teal, fontFamily: font.bold }}>
-              All upcoming
-            </T>
-          </Pressable>
-        )}
-      </View>
-      {!visible.length && (
-        <Empty
-          title={
-            selected
-              ? "A little room in the calendar."
-              : "Something to look forward to."
-          }
-          body={
-            selected
-              ? "Nothing is planned for this day yet. Make a little plan with your Circle."
-              : "Create your first event and give your people a reason to get together."
-          }
-        >
-          <Button secondary icon={Plus} onPress={openComposer}>
-            Plan something
-          </Button>
-        </Empty>
-      )}
-      {visible.map((event) => {
-        const start = new Date(event.startsAt),
-          end = new Date(event.endsAt);
-        const eventRsvps = rsvps.filter((r) => r.eventId === event.id);
-        const own = eventRsvps.find((r) => r.userId === user?.id);
-        const going = eventRsvps.filter((r) => r.response === "going");
-        const maybe = eventRsvps.filter((r) => r.response === "maybe");
-        const ended = end.getTime() <= now;
-        const canManage = event.authorId === user?.id || manager;
-        const author = state.users.find((u) => u.id === event.authorId);
-        return (
+        <View style={wide ? { width: "48%", minWidth: 0 } : { width: "100%" }}>
           <Card
-            key={event.id}
-            style={{ padding: width < 600 ? 20 : 26, gap: 20 }}
+            style={{
+              padding: compact ? 12 : 24,
+              gap: 12,
+              borderRadius: 20,
+              backgroundColor: c.white,
+              borderColor: themeTint(c.ink, 0.1),
+            }}
           >
-            <View
-              style={{
-                flexDirection: "row",
-                gap: 17,
-                alignItems: "flex-start",
-              }}
-            >
-              <View
-                style={{
-                  width: 55,
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  borderWidth: 1,
-                  borderColor: "#DDE8DC",
-                  alignItems: "center",
-                  backgroundColor: themeTint(theme.accent, 0.04),
-                }}
-              >
-                <T
-                  style={{
-                    fontSize: 9,
-                    fontFamily: font.bold,
-                    color: c.teal,
-                    backgroundColor: themeTint(theme.accent, 0.1),
-                    width: "100%",
-                    textAlign: "center",
-                    paddingVertical: 6,
-                    letterSpacing: 1,
-                  }}
-                >
-                  {start
-                    .toLocaleDateString(undefined, { month: "short" })
-                    .toUpperCase()}
-                </T>
-                <T
-                  style={{
-                    fontSize: 25,
-                    fontFamily: font.heading,
-                    paddingVertical: 7,
-                  }}
-                >
-                  {start.getDate()}
-                </T>
-              </View>
-              <View style={{ flex: 1, gap: 9 }}>
-                <T
-                  style={{
-                    fontFamily: font.heading,
-                    fontSize: 19,
-                    lineHeight: 27,
-                  }}
-                >
-                  {event.title}
-                </T>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "flex-start",
-                    gap: 6,
-                  }}
-                >
-                  <Clock3 size={13} color={c.muted} />
-                  <T
-                    style={{
-                      fontSize: 11,
-                      color: c.muted,
-                      flex: 1,
-                      lineHeight: 17,
-                    }}
-                  >
-                    {start.toLocaleString(undefined, {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}{" "}
-                    –{" "}
-                    {end.toLocaleString(undefined, {
-                      ...(dateKey(start) === dateKey(end)
-                        ? {}
-                        : { month: "short" as const, day: "numeric" as const }),
-                      hour: "numeric",
-                      minute: "2-digit",
-                      timeZoneName: "short",
-                    })}
-                  </T>
-                </View>
-                {event.location && (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      gap: 6,
-                      alignItems: "flex-start",
-                    }}
-                  >
-                    <MapPin size={13} color={c.muted} />
-                    <T
-                      style={{
-                        fontSize: 11,
-                        color: c.muted,
-                        flex: 1,
-                        lineHeight: 18,
-                      }}
-                    >
-                      {event.location}
-                    </T>
-                  </View>
-                )}
-              </View>
-              {canManage && (
-                <IconButton
-                  icon={Trash2}
-                  label={`Delete event: ${event.title}`}
-                  color={c.muted}
-                  onPress={() =>
-                    setDeleting(deleting === event.id ? null : event.id)
-                  }
-                />
-              )}
-            </View>
-            {!!event.description && (
-              <T style={{ fontSize: 13, lineHeight: 22, color: c.ink }}>
-                {event.description}
-              </T>
-            )}
             <View
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                gap: 9,
-                flexWrap: "wrap",
+                justifyContent: "space-between",
+                gap: 10,
               }}
             >
-              {going.length > 0 && (
-                <View style={{ flexDirection: "row", paddingLeft: 5 }}>
-                  {going.slice(0, 4).map((rsvp) => {
-                    const person = state.users.find(
-                      (u) => u.id === rsvp.userId,
-                    );
-                    return (
-                      <View key={rsvp.userId} style={{ marginLeft: -5 }}>
-                        <Avatar
-                          uri={person?.avatar}
-                          name={person?.name || "Circle member"}
-                          size={24}
-                          border
-                        />
-                      </View>
-                    );
+              <View style={{ gap: 4, flex: 1 }}>
+                <T
+                  accessibilityRole="header"
+                  accessibilityLiveRegion="polite"
+                  style={{
+                    fontFamily: font.editorial,
+                    fontSize: compact ? 25 : 29,
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  {month.toLocaleDateString(undefined, {
+                    month: "long",
+                    year: "numeric",
                   })}
+                </T>
+                <T style={{ fontSize: 10, color: c.muted }}>{zone()}</T>
+              </View>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
+              >
+                <IconButton
+                  icon={ChevronLeft}
+                  label="Previous calendar month"
+                  onPress={() =>
+                    setMonth(
+                      new Date(month.getFullYear(), month.getMonth() - 1, 1),
+                    )
+                  }
+                />
+                <IconButton
+                  icon={ChevronRight}
+                  label="Next calendar month"
+                  onPress={() =>
+                    setMonth(
+                      new Date(month.getFullYear(), month.getMonth() + 1, 1),
+                    )
+                  }
+                />
+              </View>
+            </View>
+            <View style={{ flexDirection: "row" }}>
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+                <View
+                  key={day}
+                  style={{
+                    width: "14.28%",
+                    alignItems: "center",
+                    paddingVertical: 8,
+                  }}
+                >
+                  <T
+                    style={{
+                      fontSize: 10,
+                      color: c.muted,
+                      fontFamily: font.medium,
+                      letterSpacing: 0.3,
+                    }}
+                  >
+                    {day}
+                  </T>
                 </View>
-              )}
-              <T style={{ fontSize: 11, color: c.muted }}>
-                {going.length} going · {maybe.length} maybe
-              </T>
-              <View style={{ flex: 1 }} />
-              <T style={{ fontSize: 10, color: c.muted }}>
-                {ended
-                  ? "Event ended"
-                  : `Planned by ${author?.name.split(" ")[0] || "a Circle member"}`}
-              </T>
+              ))}
             </View>
             <View
               style={{
                 flexDirection: "row",
-                gap: 8,
                 flexWrap: "wrap",
-                paddingTop: 17,
                 borderTopWidth: 1,
-                borderColor: c.line,
+                borderColor: themeTint(c.ink, 0.08),
               }}
             >
-              {(
-                [
-                  ["going", "Going"],
-                  ["maybe", "Maybe"],
-                  ["not_going", "Can’t go"],
-                ] as [EventRSVP["response"], string][]
-              ).map(([response, label]) => {
-                const active = own?.response === response;
+              {cells.map((day, index) => {
+                const valid = day > 0 && day <= days;
+                const dayDate = new Date(
+                  month.getFullYear(),
+                  month.getMonth(),
+                  day,
+                );
+                const key = dateKey(dayDate);
+                const count = valid
+                  ? circleEvents.filter((event) =>
+                      eventOnDate(event.startsAt, event.endsAt, key),
+                    ).length
+                  : 0;
+                const today = key === dateKey(new Date(now));
+                const active = selected === key;
                 return (
-                  <Pressable
-                    key={response}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${label} to ${event.title}`}
-                    accessibilityState={{
-                      selected: active,
-                      disabled: ended || !!busy,
-                    }}
-                    aria-pressed={active}
-                    disabled={ended || !!busy}
-                    onPress={() =>
-                      run(`rsvp-${event.id}`, () =>
-                        actions.rsvpEvent(event.id, response),
-                      )
-                    }
+                  <View
+                    key={index}
                     style={{
-                      flexDirection: "row",
-                      gap: 6,
-                      alignItems: "center",
-                      paddingHorizontal: 16,
-                      paddingVertical: 10,
-                      borderRadius: 20,
-                      borderWidth: 1,
-                      borderColor: active ? c.teal : c.line,
-                      backgroundColor: active ? c.mint : "#FBFCFA",
-                      opacity: ended ? 0.5 : 1,
+                      width: "14.28%",
+                      paddingVertical: 3,
+                      paddingHorizontal: compact ? 0 : 3,
+                      borderBottomWidth: 1,
+                      borderColor: themeTint(c.ink, 0.06),
                     }}
                   >
-                    {active && <Check size={12} color={c.teal} />}
-                    <T
-                      style={{
-                        fontSize: 12,
-                        fontFamily: active ? font.bold : font.medium,
-                        color: active ? c.teal : c.muted,
-                      }}
-                    >
-                      {label}
-                    </T>
-                  </Pressable>
+                    {valid ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${readableDate(dayDate)}, ${count} ${count === 1 ? "event" : "events"}`}
+                        accessibilityState={{ selected: active }}
+                        aria-pressed={active}
+                        onPress={() => setSelected(active ? null : key)}
+                        style={{
+                          minHeight: compact ? 48 : 58,
+                          paddingTop: 8,
+                          paddingHorizontal: 4,
+                          gap: 7,
+                          alignItems: "center",
+                          borderRadius: 12,
+                          backgroundColor: active
+                            ? c.teal
+                            : today
+                              ? c.mint
+                              : "transparent",
+                        }}
+                      >
+                        <T
+                          style={{
+                            fontSize: compact ? 13 : 14,
+                            color: active ? "white" : today ? c.teal : c.ink,
+                            fontFamily:
+                              today || active ? font.bold : font.regular,
+                          }}
+                        >
+                          {day}
+                        </T>
+                        {count > 0 && (
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              gap: 3,
+                              alignItems: "center",
+                            }}
+                          >
+                            {Array.from(
+                              { length: Math.min(count, 3) },
+                              (_, i) => (
+                                <View
+                                  key={i}
+                                  style={{
+                                    height: 4,
+                                    width: 4,
+                                    borderRadius: 2,
+                                    backgroundColor: active
+                                      ? "#FFFFFFBB"
+                                      : c.teal,
+                                  }}
+                                />
+                              ),
+                            )}
+                          </View>
+                        )}
+                      </Pressable>
+                    ) : (
+                      <View style={{ minHeight: compact ? 48 : 58 }} />
+                    )}
+                  </View>
                 );
               })}
             </View>
-            {deleting === event.id && (
-              <View
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                justifyContent: "space-between",
+              }}
+            >
+              <T style={{ fontSize: 10, color: c.muted, flex: 1 }}>
+                Tap a date to see what’s happening.
+              </T>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setMonth(
+                    new Date(
+                      new Date().getFullYear(),
+                      new Date().getMonth(),
+                      1,
+                    ),
+                  );
+                  setSelected(null);
+                }}
                 style={{
-                  backgroundColor: "#FAF2EC",
-                  padding: 16,
-                  borderRadius: 11,
-                  gap: 12,
+                  paddingHorizontal: 10,
+                  minHeight: 44,
+                  justifyContent: "center",
+                  borderRadius: 10,
+                  backgroundColor: c.mint,
                 }}
               >
-                <T style={{ fontSize: 12, lineHeight: 20 }}>
-                  Delete this event and its RSVPs? This cannot be undone.
-                </T>
-                <View
-                  style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}
+                <T
+                  style={{ fontSize: 11, color: c.teal, fontFamily: font.bold }}
                 >
-                  <Button
-                    disabled={!!busy}
-                    onPress={async () => {
-                      const result = await run(
-                        `delete-${event.id}`,
-                        () => actions.deleteEvent(event.id),
-                        "Event deleted from the Circle calendar.",
-                      );
-                      if (result.ok) setDeleting(null);
+                  Back to today
+                </T>
+              </Pressable>
+            </View>
+          </Card>
+        </View>
+        <View
+          testID="calendar-agenda"
+          style={
+            wide
+              ? { flex: 1, minWidth: 0, gap: 16 }
+              : { width: "100%", gap: 16 }
+          }
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              justifyContent: "space-between",
+              minHeight: 44,
+            }}
+          >
+            <T
+              accessibilityRole="header"
+              style={{
+                fontFamily: font.editorial,
+                fontSize: 25,
+                lineHeight: 32,
+                flex: 1,
+              }}
+            >
+              {selected
+                ? readableDate(parseLocal(selected, "12:00")!)
+                : "Coming up in your Circle"}
+            </T>
+            {selected && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSelected(null)}
+                style={{
+                  paddingHorizontal: 8,
+                  minHeight: 44,
+                  justifyContent: "center",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <T
+                  style={{ fontSize: 11, color: c.teal, fontFamily: font.bold }}
+                >
+                  All upcoming
+                </T>
+                <ArrowUpRight size={14} color={c.teal} />
+              </Pressable>
+            )}
+          </View>
+          {!visible.length && (
+            <Empty
+              title={
+                selected
+                  ? "A little room in the calendar."
+                  : "Something to look forward to."
+              }
+              body={
+                selected
+                  ? "Nothing is planned for this day yet. Make a little plan with your Circle."
+                  : "Create your first event and give your people a reason to get together."
+              }
+            >
+              <Button secondary icon={Plus} onPress={openComposer}>
+                Plan something
+              </Button>
+            </Empty>
+          )}
+          {visible.map((event) => {
+            const start = new Date(event.startsAt),
+              end = new Date(event.endsAt);
+            const eventRsvps = rsvps.filter((r) => r.eventId === event.id);
+            const own = eventRsvps.find((r) => r.userId === user?.id);
+            const going = eventRsvps.filter((r) => r.response === "going");
+            const maybe = eventRsvps.filter((r) => r.response === "maybe");
+            const ended = end.getTime() <= now;
+            const canManage = event.authorId === user?.id || manager;
+            const author = state.users.find((u) => u.id === event.authorId);
+            return (
+              <Card
+                key={event.id}
+                style={{
+                  padding: compact ? 18 : 22,
+                  gap: 16,
+                  borderRadius: 18,
+                  borderColor: themeTint(c.ink, 0.1),
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 17,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 53,
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      borderWidth: 1,
+                      borderColor: themeTint(c.teal, 0.16),
+                      alignItems: "center",
+                      backgroundColor: themeTint(theme.accent, 0.04),
                     }}
                   >
-                    Delete event permanently
-                  </Button>
-                  <Button secondary onPress={() => setDeleting(null)}>
-                    Keep event
-                  </Button>
+                    <T
+                      style={{
+                        fontSize: 9,
+                        fontFamily: font.bold,
+                        color: c.teal,
+                        backgroundColor: themeTint(theme.accent, 0.1),
+                        width: "100%",
+                        textAlign: "center",
+                        paddingVertical: 6,
+                        letterSpacing: 1,
+                      }}
+                    >
+                      {start
+                        .toLocaleDateString(undefined, { month: "short" })
+                        .toUpperCase()}
+                    </T>
+                    <T
+                      style={{
+                        fontSize: 25,
+                        fontFamily: font.heading,
+                        paddingVertical: 7,
+                      }}
+                    >
+                      {start.getDate()}
+                    </T>
+                  </View>
+                  <View style={{ flex: 1, gap: 9 }}>
+                    <T
+                      style={{
+                        fontFamily: font.heading,
+                        fontSize: 17,
+                        lineHeight: 24,
+                      }}
+                    >
+                      {event.title}
+                    </T>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "flex-start",
+                        gap: 6,
+                      }}
+                    >
+                      <Clock3 size={13} color={c.muted} />
+                      <T
+                        style={{
+                          fontSize: 11,
+                          color: c.muted,
+                          flex: 1,
+                          lineHeight: 17,
+                        }}
+                      >
+                        {start.toLocaleString(undefined, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}{" "}
+                        –{" "}
+                        {end.toLocaleString(undefined, {
+                          ...(dateKey(start) === dateKey(end)
+                            ? {}
+                            : {
+                                month: "short" as const,
+                                day: "numeric" as const,
+                              }),
+                          hour: "numeric",
+                          minute: "2-digit",
+                          timeZoneName: "short",
+                        })}
+                      </T>
+                    </View>
+                    {event.location && (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          gap: 6,
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <MapPin size={13} color={c.muted} />
+                        <T
+                          style={{
+                            fontSize: 11,
+                            color: c.muted,
+                            flex: 1,
+                            lineHeight: 18,
+                          }}
+                        >
+                          {event.location}
+                        </T>
+                      </View>
+                    )}
+                  </View>
+                  {canManage && (
+                    <IconButton
+                      icon={Trash2}
+                      label={`Delete event: ${event.title}`}
+                      color={c.muted}
+                      onPress={() =>
+                        setDeleting(deleting === event.id ? null : event.id)
+                      }
+                    />
+                  )}
                 </View>
-              </View>
-            )}
-          </Card>
-        );
-      })}
+                {!!event.description && (
+                  <T style={{ fontSize: 13, lineHeight: 22, color: c.ink }}>
+                    {event.description}
+                  </T>
+                )}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 9,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {going.length > 0 && (
+                    <View style={{ flexDirection: "row", paddingLeft: 5 }}>
+                      {going.slice(0, 4).map((rsvp) => {
+                        const person = state.users.find(
+                          (u) => u.id === rsvp.userId,
+                        );
+                        return (
+                          <View key={rsvp.userId} style={{ marginLeft: -5 }}>
+                            <Avatar
+                              uri={person?.avatar}
+                              name={person?.name || "Circle member"}
+                              size={24}
+                              border
+                            />
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                  <T style={{ fontSize: 11, color: c.muted }}>
+                    {going.length} going · {maybe.length} maybe
+                  </T>
+                  <View style={{ flex: 1 }} />
+                  <T style={{ fontSize: 10, color: c.muted }}>
+                    {ended
+                      ? "Event ended"
+                      : `Planned by ${author?.name.split(" ")[0] || "a Circle member"}`}
+                  </T>
+                </View>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    paddingTop: 17,
+                    borderTopWidth: 1,
+                    borderColor: c.line,
+                  }}
+                >
+                  {(
+                    [
+                      ["going", "Going"],
+                      ["maybe", "Maybe"],
+                      ["not_going", "Can’t go"],
+                    ] as [EventRSVP["response"], string][]
+                  ).map(([response, label]) => {
+                    const active = own?.response === response;
+                    return (
+                      <Pressable
+                        key={response}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${label} to ${event.title}`}
+                        accessibilityState={{
+                          selected: active,
+                          disabled: ended || !!busy,
+                        }}
+                        aria-pressed={active}
+                        disabled={ended || !!busy}
+                        onPress={() =>
+                          run(`rsvp-${event.id}`, () =>
+                            actions.rsvpEvent(event.id, response),
+                          )
+                        }
+                        style={{
+                          flexDirection: "row",
+                          gap: 6,
+                          alignItems: "center",
+                          paddingHorizontal: 16,
+                          paddingVertical: 10,
+                          minHeight: 44,
+                          justifyContent: "center",
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: active ? c.teal : c.line,
+                          backgroundColor: active ? c.mint : "transparent",
+                          opacity: ended ? 0.5 : 1,
+                        }}
+                      >
+                        {active && <Check size={12} color={c.teal} />}
+                        <T
+                          style={{
+                            fontSize: 12,
+                            fontFamily: active ? font.bold : font.medium,
+                            color: active ? c.teal : c.muted,
+                          }}
+                        >
+                          {label}
+                        </T>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {deleting === event.id && (
+                  <View
+                    style={{
+                      backgroundColor: "#FAF2EC",
+                      padding: 16,
+                      borderRadius: 11,
+                      gap: 12,
+                    }}
+                  >
+                    <T style={{ fontSize: 12, lineHeight: 20 }}>
+                      Delete this event and its RSVPs? This cannot be undone.
+                    </T>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Button
+                        disabled={!!busy}
+                        onPress={async () => {
+                          const result = await run(
+                            `delete-${event.id}`,
+                            () => actions.deleteEvent(event.id),
+                            "Event deleted from the Circle calendar.",
+                          );
+                          if (result.ok) setDeleting(null);
+                        }}
+                      >
+                        Delete event permanently
+                      </Button>
+                      <Button secondary onPress={() => setDeleting(null)}>
+                        Keep event
+                      </Button>
+                    </View>
+                  </View>
+                )}
+              </Card>
+            );
+          })}
+        </View>
+      </View>
     </View>
   );
 }

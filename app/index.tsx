@@ -36,6 +36,8 @@ import { PostCard } from "../src/ui/PostCard";
 import { colors as c, font } from "../src/ui/theme";
 import { HomeHighlightsCard } from "../src/features/HomeHighlightsCard";
 import { getPostMedia } from "../src/lib/postMedia";
+import { useCircleFeatures } from "../src/features/CircleFeaturesProvider";
+import { buildCatchUp } from "../src/features/catchup";
 
 const monthOf = (date: string) =>
   new Date(date).toLocaleDateString(undefined, {
@@ -45,6 +47,7 @@ const monthOf = (date: string) =>
 
 export default function Home() {
   const { ready, joinedCircles, feed, state } = useCircle();
+  const features = useCircleFeatures();
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState<"journal" | "photos">("journal");
   const [oldest, setOldest] = useState(false);
@@ -88,9 +91,11 @@ export default function Home() {
   if (!ready) return <Loading />;
   return (
     <View style={s.page}>
-      <View testID="home-circles" style={{ gap: 0, marginBottom: 14 }}>
+      <View testID="home-circles" style={s.circleSection}>
         <View style={s.sectionHeader}>
-          <T style={s.sectionLabel}>YOUR CIRCLES</T>
+          <T accessibilityRole="header" style={s.homeTitle}>
+            Your Circles
+          </T>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Pressable
               accessibilityRole="button"
@@ -127,37 +132,76 @@ export default function Home() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={s.worlds}
         >
-          {joinedCircles.map((circle) => (
-            <Pressable
-              key={circle.id}
-              accessibilityRole="link"
-              accessibilityLabel={`Open ${circle.name}`}
-              onPress={() => go("/circle/" + circle.id)}
-              style={({ pressed }) => [s.world, pressed && { opacity: 0.8 }]}
-            >
-              <View
-                style={[
-                  s.worldPhoto,
-                  mobile && { height: 66 },
-                  { backgroundColor: circle.color },
+          {joinedCircles.map((circle) => {
+            const updates = features.ready
+              ? buildCatchUp(state, features, circle.id).total
+              : 0;
+            return (
+              <Pressable
+                key={circle.id}
+                accessibilityRole="link"
+                accessibilityLabel={`Open ${circle.name}`}
+                accessibilityHint={
+                  updates > 0
+                    ? `${updates} new ${updates === 1 ? "update" : "updates"}. Highlights are inside your Circle.`
+                    : "Open memories, chat, Highlights and plans."
+                }
+                onPress={() => go("/circle/" + circle.id)}
+                style={({ pressed }) => [
+                  s.world,
+                  mobile && s.worldMobile,
+                  pressed && { opacity: 0.75 },
                 ]}
               >
-                {!!circle.cover && (
-                  <StableImage uri={circle.cover} style={s.cover} />
-                )}
-                <View style={s.worldBadge}>
-                  <CircleAvatar
-                    avatar={circle.avatar}
-                    color="transparent"
-                    size={24}
-                  />
+                <View style={[s.worldRing, updates > 0 && s.worldRingFresh]}>
+                  <View
+                    style={[
+                      s.worldPhoto,
+                      mobile && { height: 60 },
+                      { backgroundColor: circle.color },
+                    ]}
+                  >
+                    {circle.cover ? (
+                      <StableImage
+                        uri={circle.cover}
+                        circleId={circle.id}
+                        style={s.cover}
+                        accessible={false}
+                      />
+                    ) : (
+                      <View style={s.worldFallback}>
+                        <CircleAvatar
+                          avatar={circle.avatar}
+                          color="transparent"
+                          size={37}
+                        />
+                      </View>
+                    )}
+                    {circle.cover ? (
+                      <View style={s.worldBadge}>
+                        <CircleAvatar
+                          avatar={circle.avatar}
+                          color="transparent"
+                          size={20}
+                        />
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-              <T numberOfLines={1} style={s.worldName}>
-                {circle.name.replace(/ Circle$/, "")}
-              </T>
-            </Pressable>
-          ))}
+                <T numberOfLines={1} style={s.worldName}>
+                  {circle.name.replace(/ Circle$/, "")}
+                </T>
+                <View style={s.worldMeta}>
+                  {updates > 0 ? <View style={s.freshDot} /> : null}
+                  <T style={[s.worldStatus, updates > 0 && { color: c.teal }]}>
+                    {updates > 0
+                      ? `${updates > 99 ? "99+" : updates} new`
+                      : "Your Circle"}
+                  </T>
+                </View>
+              </Pressable>
+            );
+          })}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Create a new Circle"
@@ -175,7 +219,7 @@ export default function Home() {
                 lineHeight: 18,
               }}
             >
-              A new{`\n`}little world
+              New Circle
             </T>
           </Pressable>
         </ScrollView>
@@ -318,7 +362,11 @@ export default function Home() {
                   >
                     <View style={s.photoMemoryImage}>
                       {first.type === "image" ? (
-                        <StableImage uri={first.uri} style={s.cover} />
+                        <StableImage
+                          uri={first.uri}
+                          circleId={post.circleId}
+                          style={s.cover}
+                        />
                       ) : (
                         <View style={s.videoTile}>
                           <Play size={30} color={c.teal} />
@@ -408,7 +456,7 @@ export default function Home() {
                       key={circle.id}
                       accessibilityRole="link"
                       onPress={() => go(`/circle/${circle.id}?tab=chat`)}
-                      style={{ flexDirection: "row", gap: 10 }}
+                      style={s.conversation}
                     >
                       <CircleAvatar
                         avatar={circle.avatar}
@@ -473,13 +521,20 @@ export default function Home() {
 }
 const s = StyleSheet.create({
   page: { width: "100%" },
-  columns: { flexDirection: "row", alignItems: "flex-start", gap: 34 },
+  columns: { flexDirection: "row", alignItems: "flex-start", gap: 30 },
+  circleSection: { gap: 0, marginBottom: 20 },
+  homeTitle: {
+    fontFamily: font.heading,
+    fontSize: 20,
+    letterSpacing: -0.6,
+    lineHeight: 28,
+  },
   journal: { flex: 1, minWidth: 0 },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 13,
+    marginBottom: 8,
   },
   sectionLabel: {
     fontSize: 10,
@@ -491,73 +546,90 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    minHeight: 30,
+    minHeight: 44,
+    paddingHorizontal: 4,
   },
   linkText: { fontSize: 12, color: c.teal, fontFamily: font.medium },
-  worlds: { gap: 12, paddingBottom: 6, paddingRight: 4 },
-  world: {
-    width: 157,
-    borderRadius: 12,
-    backgroundColor: "white",
-    borderWidth: 1,
+  worlds: { gap: 14, paddingBottom: 3, paddingRight: 4 },
+  world: { width: 116, alignItems: "center", minHeight: 118 },
+  worldMobile: { width: 94, minHeight: 110 },
+  worldRing: {
+    width: "100%",
+    padding: 3,
+    borderWidth: 1.5,
+    borderRadius: 20,
     borderColor: c.line,
-    padding: 6,
+    backgroundColor: c.paper,
   },
+  worldRingFresh: { borderColor: c.teal },
   worldPhoto: {
     width: "100%",
-    height: 89,
-    borderRadius: 7,
+    height: 68,
+    borderRadius: 15,
     overflow: "hidden",
   },
   cover: { width: "100%", height: "100%", resizeMode: "cover" },
+  worldFallback: { flex: 1, alignItems: "center", justifyContent: "center" },
   worldBadge: {
     position: "absolute",
-    bottom: 6,
-    left: 6,
-    borderRadius: 7,
+    bottom: 4,
+    left: 4,
+    borderRadius: 9,
     backgroundColor: "#FFFFFFF2",
-    padding: 3,
+    padding: 2,
   },
   worldName: {
     fontFamily: font.bold,
     fontSize: 12,
-    paddingHorizontal: 4,
-    paddingTop: 10,
-    paddingBottom: 5,
+    paddingHorizontal: 1,
+    marginTop: 7,
+    lineHeight: 17,
+    maxWidth: "100%",
   },
-  addWorld: {
-    width: 97,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#DDE2D7",
-    borderStyle: "dashed",
+  worldMeta: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 4,
+    marginTop: 1,
+  },
+  worldStatus: { fontSize: 10, lineHeight: 15, color: c.muted },
+  freshDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.teal },
+  addWorld: {
+    width: 80,
+    alignItems: "center",
+    paddingTop: 4,
     gap: 9,
+    minHeight: 110,
   },
   addCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: c.mint,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#C7D1C5",
+    borderStyle: "dashed",
+    backgroundColor: "#EDF1E9",
     alignItems: "center",
     justifyContent: "center",
   },
   feedToolbar: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    columnGap: 8,
+    rowGap: 3,
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: 0,
     borderBottomWidth: 1,
     borderColor: c.line,
   },
-  viewTabs: { flexDirection: "row", gap: 19 },
+  viewTabs: { flexDirection: "row", gap: 12, flexShrink: 1 },
   viewTab: {
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
-    paddingBottom: 14,
-    paddingTop: 6,
+    minHeight: 44,
+    paddingVertical: 10,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
@@ -566,11 +638,17 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    minHeight: 40,
-    paddingBottom: 8,
+    minHeight: 44,
+    paddingHorizontal: 5,
   },
   filters: { gap: 6, paddingVertical: 15 },
-  filter: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: 20 },
+  filter: {
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    minHeight: 44,
+    justifyContent: "center",
+    borderRadius: 20,
+  },
   filterActive: { backgroundColor: "#E7EDE3" },
   searchResult: {
     flexDirection: "row",
@@ -592,20 +670,26 @@ const s = StyleSheet.create({
     color: c.muted,
     fontFamily: font.medium,
   },
-  photoGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, paddingTop: 5 },
+  photoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 12,
+    paddingTop: 5,
+  },
   photoMemory: {
     backgroundColor: "white",
     borderWidth: 1,
     borderColor: c.line,
-    borderRadius: 9,
-    padding: 6,
+    borderRadius: 4,
+    padding: 7,
     marginBottom: 6,
   },
   photoMemoryImage: {
     width: "100%",
     aspectRatio: 1,
     overflow: "hidden",
-    borderRadius: 4,
+    borderRadius: 2,
     backgroundColor: c.mint,
   },
   videoTile: {
@@ -627,10 +711,11 @@ const s = StyleSheet.create({
     borderRadius: 7,
   },
   photoCaption: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: font.medium,
     paddingHorizontal: 2,
     marginTop: 9,
+    lineHeight: 18,
   },
   photoDate: {
     fontSize: 10,
@@ -640,6 +725,12 @@ const s = StyleSheet.create({
     paddingHorizontal: 2,
   },
   aside: { width: 270, gap: 22 },
+  conversation: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minHeight: 44,
+  },
   asideDate: {
     flexDirection: "row",
     gap: 10,
@@ -655,8 +746,9 @@ const s = StyleSheet.create({
     alignItems: "center",
     borderTopWidth: 1,
     borderColor: c.line,
-    paddingTop: 18,
-    marginTop: 24,
+    paddingVertical: 10,
+    marginTop: 20,
+    minHeight: 44,
   },
   archiveNote: { padding: 16, gap: 5 },
   archiveTitle: {

@@ -59,9 +59,9 @@ test("portrait photos retain their proportions through preview, publishing and r
     .getByRole("button", { name: "Close media viewer", exact: true })
     .click();
   await page
-    .getByLabel("Post content", { exact: true })
+    .getByLabel("Memory text", { exact: true })
     .fill("Portrait moments deserve the whole picture.");
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await page.reload();
   const photo = page.getByRole("img", {
@@ -108,9 +108,9 @@ test("large photos keep 4096-pixel detail through preview, publishing, and reloa
     page.getByText("4096 × 2731 · Full photo, no crop", { exact: true }),
   ).toBeVisible();
   await page
-    .getByLabel("Post content", { exact: true })
+    .getByLabel("Memory text", { exact: true })
     .fill("A landscape with room for every detail.");
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await page.reload();
   const photo = page.getByRole("img", {
@@ -159,9 +159,9 @@ test("short videos preview and persist with native controls and no autoplay", as
     .poll(() => preview.evaluate((v) => (v as HTMLVideoElement).currentTime))
     .toBeGreaterThan(0);
   await page
-    .getByLabel("Post content", { exact: true })
+    .getByLabel("Memory text", { exact: true })
     .fill("A tiny video from our day.");
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await page.reload();
   const published = page.locator("video").first();
@@ -188,9 +188,9 @@ test("a video longer than one minute previews, publishes, and survives reload", 
   await (await picker).setFiles("e2e/fixtures/too-long-video.mp4");
   await expect(page.getByText(/1:01.*Sound starts muted/)).toBeVisible();
   await page
-    .getByLabel("Post content", { exact: true })
+    .getByLabel("Memory text", { exact: true })
     .fill("A longer video from our day.");
-  await page.getByRole("button", { name: "Share moment", exact: true }).click();
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
   await expect(page).toHaveURL(/\/post\//);
   await page.reload();
   await expect
@@ -219,6 +219,6 @@ test("the browser rejects videos over ten minutes using their real duration", as
     page.getByRole("button", { name: "Remove media", exact: true }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Share moment", exact: true }),
+    page.getByRole("button", { name: "Add memory", exact: true }),
   ).toBeDisabled();
 });

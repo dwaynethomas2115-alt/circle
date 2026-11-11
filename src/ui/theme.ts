@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 
 export const colors = {
   ink: "#263B36",
-  muted: "#69776F",
+  muted: "#5C6B63",
   teal: "#287663",
   tealDark: "#1E5E4F",
   mint: "#EDF2E9",

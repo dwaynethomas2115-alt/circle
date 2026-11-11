@@ -7,7 +7,6 @@ import {
   useWindowDimensions,
   TextInput,
   Animated,
-  AccessibilityInfo,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
@@ -26,6 +25,7 @@ import {
   BookOpen,
   Settings2,
   ChevronRight,
+  CalendarDays,
 } from "lucide-react-native";
 import { useCircle } from "../state/CircleProvider";
 import { T, Avatar, IconButton, CircleAvatar } from "./primitives";
@@ -39,9 +39,11 @@ import {
   themeTint,
 } from "../features/theme-context";
 import { ThemeDecoration } from "../features/ThemeDecoration";
+import { useReducedMotion } from "./useReducedMotion";
 export const navItems = [
   { label: "Home", path: "/", icon: Home },
   { label: "My Circles", path: "/circles", icon: Compass },
+  { label: "Plans", path: "/plans", icon: CalendarDays },
   { label: "Add memory", path: "/create", icon: Plus },
   { label: "Inbox", path: "/inbox", icon: MessageCircle },
   { label: "My profile", path: "/profile", icon: UserRound },
@@ -133,11 +135,13 @@ function ThemedShell({
           ? "Your little worlds"
           : path === "/inbox"
             ? "The conversation"
-            : path === "/create"
-              ? "Add memory"
-              : path === "/profile"
-                ? "Your personal space"
-                : "Your Circle";
+            : path === "/plans"
+              ? "Your shared plans"
+              : path === "/create"
+                ? "Add memory"
+                : path === "/profile"
+                  ? "Your personal space"
+                  : "Your Circle";
   if (bare) return <>{children}</>;
   const go = (p: string) => router.push(p as never);
   const currentCircleId = decorated
@@ -169,135 +173,131 @@ function ThemedShell({
           >
             <Brand />
           </Pressable>
-          <View style={{ gap: 5, paddingHorizontal: 16 }}>
-            {navItems.map(({ label, path: p, icon: Icon }) => {
-              const active =
-                path === p || (p === "/circles" && path.startsWith("/circle/"));
-              return (
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 12 }}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={{ gap: 5, paddingHorizontal: 16 }}>
+              {navItems.map(({ label, path: p, icon: Icon }) => {
+                const active =
+                  path === p ||
+                  (p === "/circles" && path.startsWith("/circle/"));
+                return (
+                  <Pressable
+                    key={p}
+                    accessibilityRole="link"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => go(navDestination(p))}
+                    style={({ pressed }) => [
+                      s.navItem,
+                      active && { backgroundColor: tint },
+                      pressed && !active && { backgroundColor: "#F5F7F5" },
+                    ]}
+                  >
+                    <Icon
+                      size={20}
+                      color={active ? theme.accent : c.muted}
+                      strokeWidth={active ? 2 : 1.7}
+                    />
+                    <T
+                      style={{
+                        fontFamily: active ? font.bold : font.medium,
+                        color: active ? theme.accent : c.muted,
+                        flex: 1,
+                        fontSize: 14,
+                      }}
+                    >
+                      {label}
+                    </T>
+                    {p === "/inbox" && (
+                      <View
+                        style={[
+                          s.count,
+                          { backgroundColor: themeTint(theme.accent, 0.14) },
+                        ]}
+                      >
+                        <T
+                          style={{
+                            color: theme.accent,
+                            fontSize: 10,
+                            fontFamily: font.bold,
+                          }}
+                        >
+                          {joinedCircles.length}
+                        </T>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={{ marginTop: 35, paddingHorizontal: 28 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 18,
+                }}
+              >
+                <T style={s.kicker}>YOUR CIRCLES</T>
                 <Pressable
-                  key={p}
-                  accessibilityRole="link"
-                  onPress={() => go(navDestination(p))}
-                  style={({ pressed }) => [
-                    s.navItem,
-                    active && { backgroundColor: tint },
-                    pressed && !active && { backgroundColor: "#F5F7F5" },
-                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Create a Circle"
+                  onPress={() => go("/new-circle")}
+                  style={s.smallAction}
                 >
-                  <Icon
-                    size={20}
-                    color={active ? theme.accent : c.muted}
-                    strokeWidth={active ? 2 : 1.7}
+                  <Plus size={15} color={c.muted} />
+                </Pressable>
+              </View>
+              {joinedCircles.slice(0, 4).map((circle) => (
+                <Pressable
+                  key={circle.id}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open ${circle.name}`}
+                  onPress={() => go("/circle/" + circle.id)}
+                  style={s.circleLink}
+                >
+                  <CircleAvatar
+                    avatar={circle.avatar}
+                    color={circle.color}
+                    size={28}
                   />
                   <T
-                    style={{
-                      fontFamily: active ? font.bold : font.medium,
-                      color: active ? theme.accent : c.muted,
-                      flex: 1,
-                      fontSize: 14,
-                    }}
+                    numberOfLines={1}
+                    style={{ fontSize: 12, color: "#75827C", flex: 1 }}
                   >
-                    {label}
+                    {circle.name.replace(" Circle", "")}
                   </T>
-                  {p === "/inbox" && (
-                    <View
-                      style={[
-                        s.count,
-                        { backgroundColor: themeTint(theme.accent, 0.14) },
-                      ]}
-                    >
-                      <T
-                        style={{
-                          color: theme.accent,
-                          fontSize: 10,
-                          fontFamily: font.bold,
-                        }}
-                      >
-                        {joinedCircles.length}
-                      </T>
-                    </View>
-                  )}
                 </Pressable>
-              );
-            })}
-          </View>
-          <View style={{ marginTop: 35, paddingHorizontal: 28 }}>
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 18,
-              }}
-            >
-              <T style={s.kicker}>YOUR CIRCLES</T>
+              ))}
               <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Create a Circle"
-                onPress={() => go("/new-circle")}
-              >
-                <Plus size={15} color={c.muted} />
-              </Pressable>
-            </View>
-            {joinedCircles.slice(0, 4).map((circle) => (
-              <Pressable
-                key={circle.id}
+                onPress={() => go("/circles")}
                 accessibilityRole="link"
-                onPress={() => go("/circle/" + circle.id)}
-                style={s.circleLink}
+                style={{
+                  flexDirection: "row",
+                  gap: 7,
+                  alignItems: "center",
+                  minHeight: 44,
+                }}
               >
-                <CircleAvatar
-                  avatar={circle.avatar}
-                  color={circle.color}
-                  size={28}
-                />
-                <T
-                  numberOfLines={1}
-                  style={{ fontSize: 12, color: "#75827C", flex: 1 }}
-                >
-                  {circle.name.replace(" Circle", "")}
-                </T>
+                <T style={{ fontSize: 11, color: c.muted }}>View all Circles</T>
+                <ChevronRight size={12} color={c.muted} />
               </Pressable>
-            ))}
-            <Pressable
-              onPress={() => go("/circles")}
-              style={{
-                flexDirection: "row",
-                gap: 7,
-                alignItems: "center",
-                marginTop: 7,
-              }}
-            >
-              <T style={{ fontSize: 11, color: c.muted }}>View all Circles</T>
-              <ChevronRight size={12} color={c.muted} />
-            </Pressable>
-          </View>
-          <View style={{ flex: 1 }} />
-          <View style={[s.sideNote, { backgroundColor: tint }]}>
-            <View
-              style={{
-                width: 31,
-                height: 31,
-                borderRadius: 10,
-                backgroundColor: themeTint(theme.accent, 0.14),
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 11,
-              }}
-            >
-              <LockKeyhole size={15} color={theme.accent} />
             </View>
-            <T style={{ fontFamily: font.bold, fontSize: 12, marginBottom: 6 }}>
-              The days worth keeping.
+          </ScrollView>
+          <View style={[s.sideNote, { backgroundColor: tint }]}>
+            <LockKeyhole size={13} color={theme.accent} />
+            <T
+              style={{
+                fontFamily: font.medium,
+                color: theme.accent,
+                fontSize: 11,
+              }}
+            >
+              Just you and your people.
             </T>
-            <T style={{ fontSize: 11, lineHeight: 18, color: "#7A8A80" }}>
-              Photographs, conversations, and a little life together.
-            </T>
-            <BookOpen
-              size={14}
-              color={theme.accent}
-              style={{ position: "absolute", right: 17, top: 19 }}
-            />
           </View>
           <Pressable
             accessibilityRole="link"
@@ -325,7 +325,7 @@ function ThemedShell({
               backgroundColor: theme.surface,
               borderColor: themeTint(theme.ink, 0.09),
             },
-            !wide && { height: 67, paddingHorizontal: 16 },
+            !wide && { height: 60, paddingHorizontal: 16 },
           ]}
         >
           {wide ? (
@@ -469,7 +469,10 @@ function ThemedShell({
                 backgroundColor: theme.surface,
                 borderColor: themeTint(theme.ink, 0.09),
               },
-              { height: 72 + insets.bottom, paddingBottom: 10 + insets.bottom },
+              {
+                minHeight: 72 + insets.bottom,
+                paddingBottom: 10 + insets.bottom,
+              },
             ]}
           >
             {navItems.map(({ label, path: p, icon: Icon }) => (
@@ -483,7 +486,15 @@ function ThemedShell({
                     (p === "/circles" && path.startsWith("/circle/")),
                 }}
                 onPress={() => go(navDestination(p))}
-                style={{ alignItems: "center", gap: 5, flex: 1 }}
+                style={{
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 5,
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 48,
+                  paddingHorizontal: 2,
+                }}
               >
                 <View
                   style={
@@ -507,7 +518,9 @@ function ThemedShell({
                 {p !== "/create" && (
                   <T
                     style={{
-                      fontSize: 9,
+                      fontSize: 10,
+                      lineHeight: 14,
+                      textAlign: "center",
                       color:
                         path === p ||
                         (p === "/circles" && path.startsWith("/circle/"))
@@ -539,9 +552,10 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    height: 46,
+    minHeight: 48,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 14,
   },
   navActive: { backgroundColor: c.mint },
   count: {
@@ -562,7 +576,15 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 11,
-    marginBottom: 16,
+    minHeight: 44,
+    marginBottom: 4,
+  },
+  smallAction: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
   },
   circleEmoji: {
     width: 28,
@@ -573,10 +595,13 @@ const s = StyleSheet.create({
   },
   sideNote: {
     marginHorizontal: 20,
-    padding: 16,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     backgroundColor: "#F3F7EF",
     borderRadius: 13,
-    marginBottom: 22,
+    marginBottom: 12,
   },
   sideProfile: {
     borderTopWidth: 1,
@@ -587,7 +612,7 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   topbar: {
-    height: 73,
+    height: 64,
     backgroundColor: "white",
     borderBottomWidth: 1,
     borderColor: c.line,
@@ -629,7 +654,6 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 78,
     paddingTop: 14,
     paddingBottom: 12,
     backgroundColor: "white",
@@ -664,22 +688,23 @@ function PageMotion({
   children: React.ReactNode;
 }) {
   const progress = useRef(new Animated.Value(1)).current;
+  const reduced = useReducedMotion();
   useEffect(() => {
-    let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
-      if (!alive || reduce) return;
-      progress.setValue(0);
-      Animated.timing(progress, {
-        toValue: 1,
-        duration: 230,
-        useNativeDriver: Platform.OS !== "web",
-      }).start();
-    });
+    progress.stopAnimation();
+    if (reduced) {
+      progress.setValue(1);
+      return;
+    }
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: Platform.OS !== "web",
+    }).start();
     return () => {
-      alive = false;
       progress.stopAnimation();
     };
-  }, [path, progress]);
+  }, [path, progress, reduced]);
   return (
     <Animated.View
       style={{
